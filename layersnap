@@ -1,0 +1,13 @@
+#!/bin/bash
+
+source params
+
+if   [[ "$RESTORE" == "1" ]]; then
+  echo restore $DIR
+elif [[ "$MERGE" == "1" ]]; then
+  echo snapshot $DIR
+else
+  echo snapshot $DIR
+fi
+
+
