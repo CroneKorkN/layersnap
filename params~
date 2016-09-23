@@ -26,7 +26,7 @@ done
 
 # last param
 if [[ -n $1 ]]; then
-  DIR=$(realpath $1)
+  DIR=realpath $1
 else
   DIR=$(pwd)
 fi
