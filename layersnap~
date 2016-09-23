@@ -5,8 +5,8 @@ source /home/ckn/layersnap/params
 source /home/ckn/layersnap/actions
 
 # define directory paths
-BaseDir=$(basename $TargetDir)
-ConfDir="$(dirname $TargetDir)/.layersnap/$BaseDir"
+DirName="$(basename $TargetDir)"
+ConfDir="$(dirname $TargetDir)/.layersnap/$DirName"
 UpperDir="$ConfDir/upper"
 LowerDir="$ConfDir/lower"
 WorkDir="$ConfDir/work"
