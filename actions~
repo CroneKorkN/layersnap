@@ -1,26 +1,41 @@
 #!/bin/bash
 
 ls_status() {
-  BASEDIR=$(basename $DIR)
-  CONFDIR="$(dirname $DIR)/.layersnap/$BASEDIR"
-  
-  echo $CONFDIR
-
-  if [ -d "$CONFDIR" ]; then
-    echo "$DIR is layersnapped!"
+  if [ -d "$ConfDir" ]; then
+    echo "$TargetDir is layersnapped!"
   else
-    echo "$DIR is not layersnapped."
+    echo "$TargetDir is not layersnapped."
   fi
 }
 
 ls_snapshot() {
- echo 1
+  mkdir -p "$ConfDir"
+  mv "$TargetDir" "$LowerDir"
+  
+  mkdir "$UpperDir"
+  mkdir "$WorkDir"
+  
+  mkdir "$TargetDir"
+  mount -t overlay overlay -olowerdir="$LowerDir",upperdir="$UpperDir",workdir="$WorkDir" $TargetDir
 }
 
 ls_merge() {
-  1
+  umount "$TargetDir"
+  rm -R "$TargetDir"
+
+  rsync -av "$UpperDir/"* "$LowerDir"
+  mv "$LowerDir" "$TargetDir"
+  
+  rm -R "$ConfDir"
 }
 
 ls_restore() {
-  1
+    umount "$TargetDir"
+    rm -R "$TargetDir"
+    
+    rm -R "$WorkDir"
+    rm -R "$UpperDir"
+
+    mv "$LowerDir" "$TargetDir"
+    rm -R "$ConfDir"
 }

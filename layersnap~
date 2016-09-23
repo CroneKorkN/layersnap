@@ -1,19 +1,40 @@
 #!/bin/bash
 
+# load libs
 source /home/ckn/layersnap/params
-#source /home/ckn/layersnap/actions
+source /home/ckn/layersnap/actions
 
+# define directory paths
+BaseDir=$(basename $TargetDir)
+ConfDir="$(dirname $TargetDir)/.layersnap/$BaseDir"
+UpperDir="$ConfDir/upper"
+LowerDir="$ConfDir/lower"
+WorkDir="$ConfDir/work"
+
+# conntroller
 case $ACTION in
   status)
     ls_status
   ;;
   snapshot)
-    ls_snapshot
-  ;;
-  restore)
-    ls_restore
+    if [ ! -d "$ConfDir" ]; then
+      ls_snapshot
+    else
+      echo ERROR: $Target is already layersnapped
+    fi
   ;;
   merge)
-    ls_merge
+    if [ -d "$ConfDir" ]; then
+      ls_merge
+    else
+      echo ERROR: $TargetDir is not layersnapped, so nothing to merge!
+    fi
+  ;;
+  restore)
+    if [ -d "$ConfDir" ]; then
+      ls_restore
+    else
+      echo ERROR: $TargetDir is not layersnapped, so nothing to restore!
+    fi
   ;;
 esac
