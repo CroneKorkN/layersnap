@@ -1,28 +1,36 @@
 #!/bin/bash
 
 # "-" params
+ACTION=status
 while [[ $# -gt 1 ]]
 do
   key="$1"
   case $key in
-    -m|--merge)
-    MERGE="1" #"$2"
+    -s|--snapshot)
+    ACTION=snapshot #"$2"
     shift
     ;;
 
     -r|--restore)
-    RESTORE="1" #"$2"
+    ACTION=restore #"$2"
+    VALUE="$2"
     shift
     ;;
-    
+
+    -m|--merge)
+    ACTION=merge #"$2"
+    shift
+    ;;
   esac
 done
 
 # last param
 if [[ -n $1 ]]; then
   DIR=$1
+else
+  DIR=$(pwd)
 fi
 
 # http://stackoverflow.com/questions/192249/how-do-i-parse-command-line-arguments-in-bash
 
-echo "### r:$RESTORE m: $MERGE d: $DIR"
+echo "### $ACTION $VALUE $DIR"

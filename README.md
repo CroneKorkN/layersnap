@@ -13,7 +13,11 @@ show status of current working directory
 
 ## only directory given
 
-create new snapshot of given directory
+show status of given directory
+
+## -s or --snapshot [<target-directory>]
+
+create snapshot of cwd or target, if given
 
 ## -r or --restore <snapshot-id>
 

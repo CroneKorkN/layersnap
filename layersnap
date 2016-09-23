@@ -2,12 +2,17 @@
 
 source params
 
-if   [[ "$RESTORE" == "1" ]]; then
-  echo restore $DIR
-elif [[ "$MERGE" == "1" ]]; then
-  echo snapshot $DIR
-else
-  echo snapshot $DIR
-fi
-
-
+case $ACTION in
+  status)
+    echo status $DIR    
+  ;;
+  snapshot)
+    echo snapshot $DIR
+  ;;
+  restore)
+    echo restore $DIR
+  ;;
+  merge)
+    echo merge $DIR
+  ;;
+esac
