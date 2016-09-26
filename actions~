@@ -13,23 +13,23 @@ ls_status() {
 #
 
 ls_prepare() {
-  # DEFINE
+  # --- DEFINE ---
   GenericSnapshotDir="$PoolDir/0"
   GenericSnapshotMergeDir="$GenericSnapshotDir/merge"
   
-  # WORK
+  # --- WORK ---
   mkdir -p "$GenericSnapshotDir"
   mv "$TargetDir" "$GenericSnapshotMergeDir"
   ln -s "$GenericSnapshotMergeDir" "$TargetDir"
 }
 
 #
-# create new snapshot-layer 
+# create new snapshot-layer
 #
 
 ls_snapshot() {
-  # DEFINE
-  Now=$(date +"%Y-%m-%d_%H:%M")
+  # --- DEFINE ---
+  Now=$(date "$DateFormat")
   SnapshotDir="$PoolDir/$Now"
   
   UpperDir="$SnapshotDir/upper"
@@ -37,30 +37,33 @@ ls_snapshot() {
   WorkDir="$SnapshotDir/work"
   MergeDir="$SnapshotDir/merge"
   
-  # prepare target for snapshot first?
-  if [ ! -d "$PoolDir" ]; then
-    ls_prepare
-  fi
-
   # locate previous snapshot
-  Previous=ls -1 | sort -r | head --lines=1
-  PreviousMergeDir="$PoolDir/$Previous/merge"
+  PreviousName=$(ls -1 $PoolDir | sort -r | head --lines=1)
+  PreviousMergeDir="$PoolDir/$PreviousName/merge"
+  echo $PreviousName
+  echo $PreviousMergeDir
 
-  # WORK
+  # --- WORK ---
 
   # create directories
   mkdir "$SnapshotDir"
   mkdir "$UpperDir"
   mkdir "$WorkDir"
   mkdir "$MergeDir"
-
+  
   # lowerdir is symlinked to previous snapshot mergedir
   ln -s "$PreviousMergeDir" "$LowerDir"
   
-  mount -t overlay overlay -olowerdir="$LowerDir",upperdir="$UpperDir",workdir="$WorkDir" "$MergeDir"
+  read
   
-  # let target point to new mergedir
+  # relink target to new mergedir
+  rm "$TargetDir"
   ln -s "$MergeDir" "$TargetDir"
+  
+  read
+  
+  # mount (do after relinking!)
+  mount -t overlay overlay -olowerdir="$LowerDir",upperdir="$UpperDir",workdir="$WorkDir" "$MergeDir" 
 }
 
 #

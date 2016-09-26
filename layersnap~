@@ -6,8 +6,9 @@ source /home/ckn/layersnap/actions
 
 # paths and vars
 TargetDir="$TargetDir"
-DirName="$(basename $TargetDir)"
-PoolDir="$(dirname $TargetDir)/.layersnap/$DirName"
+TargetName="$(basename $TargetDir)"
+PoolDir="$(dirname $TargetDir)/.layersnap/$TargetName"
+DateFormat="+%s" #"%Y-%m-%d_%H:%M"
 
 # conntroller
 case $ACTION in
@@ -16,9 +17,16 @@ case $ACTION in
   status)
     ls_status
   ;;
+
+  # prepare
+  prepare)
+    ls_prepare
+  ;;
   
   # snapshot
   snapshot)
+    # prepare target for snapshot first?
+    if [ ! -d "$PoolDir" ]; then ls_prepare; fi
     ls_snapshot
   ;;
   
@@ -41,3 +49,6 @@ case $ACTION in
   ;;
   
 esac
+
+
+# DIR=a; umount -R .layersnap/$DIR/*/merge; rm -R $DIR .layersnap/; mkdir $DIR; touch $DIR/f; layersnap -s $DIR
