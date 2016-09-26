@@ -5,7 +5,6 @@ source /home/ckn/layersnap/params
 source /home/ckn/layersnap/actions
 
 # paths and vars
-TargetDir="$TargetDir"
 TargetName="$(basename $TargetDir)"
 PoolDir="$(dirname $TargetDir)/.layersnap/$TargetName"
 DateFormat="+%s" #"%Y-%m-%d_%H:%M"
@@ -31,6 +30,8 @@ case $ACTION in
   # snapshot
   snapshot)
     # prepare target for snapshot first?
+    if [ ! -d "$PoolDir" ]; then echo "### testdings"; fi
+    echo "$PoolDir"
     if [ ! -d "$PoolDir" ]; then ls_prepare; fi
     ls_snapshot
   ;;
@@ -57,3 +58,6 @@ esac
 
 
 # DIR=a; umount -R .layersnap/$DIR/*/merge; rm -R $DIR .layersnap/; mkdir $DIR; touch $DIR/f; layersnap -s $DIR
+
+# umount -R .layersnap/$DIR/*/merge; rm -R $DIR .layersnap/;
+# DIR=target; cp -R nextcloud/* $target; umount -R .layersnap/$DIR/*/merge; rm -R $DIR .layersnap/; mkdir $DIR; touch $DIR/f; layersnap -s $DIR; cp -R phpBB3/* $target;

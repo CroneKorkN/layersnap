@@ -13,6 +13,8 @@ ls_status() {
 #
 
 ls_prepare() {
+  echo "### PREPARING"
+
   # --- DEFINE ---
   GenericSnapshotDir="$PoolDir/0"
   GenericSnapshotMergeDir="$GenericSnapshotDir/merge"
@@ -40,29 +42,29 @@ ls_snapshot() {
   # locate previous snapshot
   PreviousName=$(ls -1 $PoolDir | sort -r | head --lines=1)
   PreviousMergeDir="$PoolDir/$PreviousName/merge"
-  echo $PreviousName
-  echo $PreviousMergeDir
 
   # --- WORK ---
 
   # create directories
+
   mkdir "$SnapshotDir"
   mkdir "$UpperDir"
   mkdir "$WorkDir"
   mkdir "$MergeDir"
   
   # lowerdir is symlinked to previous snapshot mergedir
+  echo 1;read
   ln -s "$PreviousMergeDir" "$LowerDir"
   
-  read
-  
   # relink target to new mergedir
+  echo 2;read
   rm "$TargetDir"
+  echo 3;read
   ln -s "$MergeDir" "$TargetDir"
   
-  read
-  
   # mount (do after relinking!)
+  echo 4;read
+  echo "$LowerDir   $UpperDir   $WorkDir   $MergeDir"
   mount -t overlay overlay -olowerdir="$LowerDir",upperdir="$UpperDir",workdir="$WorkDir" "$MergeDir" 
 }
 

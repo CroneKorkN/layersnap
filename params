@@ -31,9 +31,10 @@ done
 
 # last param
 if [[ -n $1 ]]; then
-  TargetDir=$(realpath $1)
+  #TargetDir=$(realpath $1) # bug: follows symlink
+  TargetDir="$(pwd)/$1"
 else
-  TargetDir=$(pwd)
+  echo "ERROR: please provide a target-dir!"
 fi
 
 # http://stackoverflow.com/questions/192249/how-do-i-parse-command-line-arguments-in-bash
