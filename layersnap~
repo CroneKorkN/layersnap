@@ -1,18 +1,13 @@
 #!/bin/bash
 
 # libs
-echo "1 $TargetDir"
 source /home/ckn/layersnap/params
-echo "2 $TargetDir"
 source /home/ckn/layersnap/actions
-echo "3 $TargetDir"
 
 # paths and vars
 TargetName="$(basename $TargetDir)"
 PoolDir="$(dirname $TargetDir)/.layersnap/$TargetName"
 DateFormat="+%s" #"%Y-%m-%d_%H:%M"
-
-echo "4 $TargetDir"
 
 #
 # conntroller
