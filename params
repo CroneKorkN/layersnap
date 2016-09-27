@@ -6,25 +6,30 @@ while [[ $# -gt 1 ]]
 do
   key="$1"
   case $key in
-    -p|--prepare)
-    ACTION=prepare 
-    shift
+    -m|--mount)
+      ACTION=mount 
+      shift
     ;;
 
     -s|--snapshot)
-    ACTION=snapshot
-    shift
+      ACTION=snapshot
+      shift
+    ;;
+
+    -c|--checkout)
+      ACTION=checkout
+      shift
     ;;
 
     -r|--restore)
-    ACTION=restore
-    VALUE="$2"
-    shift
+      ACTION=restore
+      VALUE="$2"
+      shift
     ;;
 
     -m|--merge)
-    ACTION=merge
-    shift
+      ACTION=merge
+      shift
     ;;
   esac
 done

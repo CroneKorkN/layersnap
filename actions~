@@ -3,16 +3,37 @@
 # ResentSnapshot=$(ls -1 "$PoolPath/lower-"* | sort -r | head --lines=1)
 
 ls_status() {
+  echo "$PoolPath"
   if [ -d "$PoolPath" ]; then
-    echo "$TargetPath is layersnapped!"
+    echo
+    echo LAYERSNAP STATUS:
+    echo "$TargetPath" consists of $(find "$PoolPath" -name lower-* | wc -l)+1 layers.
+    echo
     i=0
-    for f in lower-*; do
+    for f in "$PoolPath/lower-"*; do
       i=$(expr $i + 1)
-      echo $i: $(echo $f | cut -c 7-);
+      echo $i: $(basename $f | cut -c 7-);
     done
   else
     echo "$TargetPath is not layersnapped."
   fi
+}
+
+#
+# mount pool
+#
+
+ls_mount() {
+  # collect lower-paths
+
+  LowerList=""
+  for f in "$PoolPath/lower-"*; do
+    LowerList="$(realpath "$f"):$LowerList"
+  done
+  LowerList=${LowerList::-1} # cut trailing ":"
+  
+  # mount
+  mount -t overlay overlay -olowerdir="$LowerList",upperdir="$UpperPath",workdir="$WorkPath" "$TargetPath"
 }
 
 #
@@ -34,35 +55,98 @@ ls_snapshot() {
     mv    "$TargetPath" "$LowerPath"
     mkdir "$TargetPath"
   else
-    # consecutive snapshots 
+    # consecutive snapshots
     umount "$TargetPath"
     mv "$UpperPath" "$LowerPath"
   fi
   mkdir "$UpperPath"
 
-  # collect lower-paths
-  LowerList=""
-  for f in "$PoolPath/lower-"*; do
-    LowerList=$LowerList:$(realpath $f)
-  done
-  LowerList=$(echo $LowerList | cut -c 2-)
-
   # mount
-  mount -t overlay overlay -olowerdir="$LowerList",upperdir="$UpperPath",workdir="$WorkPath" "$TargetPath"
+  ls_mount
+}
+
+#
+# restore layer
+#
+# - let user select layer-Id to restore
+# - merge layer-after-layer into lowest layer
+# - make lowest layer the new target dir
+# - clean up
+#
+
+ls_restore() {
+  ls_status
+  read -p "Snapshot ID to restore: " LayerID
+
+  umount "$TargetPath"
+  rmdir  "$TargetPath"
+    
+  i=1
+  for f in "$PoolPath/lower-"*; do
+    # remember lowest layer and merge all upper layer into it
+    if [ "$i" == 1 ]; then
+      LowestPath="$f"
+    else
+      rsync --remove-source-files "$f/"* "$LowestPath"
+    fi
+    if [ "$i" == "$LayerID" ]; then
+      break
+    fi
+    i=$(expr $i + 1)
+  done
+  
+  mv "$LowestPath" "$TargetPath"
+  rm -R "$PoolPath"
 }
 
 #
 # merge with previous layer
 #
 
-ls_merge() {
-  ls
+ls_checkout() {
+  ls_status
+  read -p "Layer to mount: " LayerID
+
+  # collect selected layers
+  i=0
+  LowerList=""
+  for f in "$PoolPath/lower-"*; do
+    i=$(expr $i + 1)
+    LowerList=$(realpath $f):$LowerList
+    if [ "$i" == "$LayerID" ]; then
+      LayerName=$(basename $f | cut -c 7-)
+      break
+    fi
+  done
+  
+  CheckoutPath=$TargetPath-$LayerName
+  mkdir $CheckoutPath
+  
+  # mount
+  mount -t overlay overlay -olowerdir="$LowerList",upperdir="$UpperPath",workdir="$WorkPath" "$CheckoutPath"
 }
 
-#
-# restore layer
-#
 
-ls_restore() {
-  ls
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

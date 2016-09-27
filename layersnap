@@ -23,13 +23,17 @@ case $ACTION in
   ;;
 
   # prepare
-  prepare)
-    ls_prepare
+  mount)
+    ls_mount
   ;;
   
   # snapshot
   snapshot)
     ls_snapshot
+  ;;
+  
+  checkout)
+    ls_checkout
   ;;
   
   #merge
@@ -49,7 +53,6 @@ case $ACTION in
       echo ERROR: $TargetPath is not layersnapped, so nothing to restore!
     fi
   ;;
-  
 esac
 
 

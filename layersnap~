@@ -23,17 +23,17 @@ case $ACTION in
   ;;
 
   # prepare
-  prepare)
-    ls_prepare
+  mount)
+    ls_mount
   ;;
   
   # snapshot
   snapshot)
-    # prepare target for snapshot first?
-    if [ ! -d "$PoolPath" ]; then echo "### testdings"; fi
-    echo "$PoolPath"
-    if [ ! -d "$PoolPath" ]; then ls_prepare; fi
     ls_snapshot
+  ;;
+  
+  checkout)
+    ls_checkout
   ;;
   
   #merge
@@ -53,7 +53,6 @@ case $ACTION in
       echo ERROR: $TargetPath is not layersnapped, so nothing to restore!
     fi
   ;;
-  
 esac
 
 
