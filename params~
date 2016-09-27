@@ -31,7 +31,7 @@ done
 
 # last param
 if [[ -n $1 ]]; then
-  #TargetDir=$(realpath $1)
+  #TargetDir=$(realpath $1) # bug: follows symlink
   TargetDir="$(pwd)/$1"
 else
   echo "ERROR: please provide a target-dir!"

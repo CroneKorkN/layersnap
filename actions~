@@ -1,12 +1,17 @@
 #!/bin/bash
 
-# $(ls -1 $PoolDir | sort -r | head --lines=1)
+# ResentSnapshot=$(ls -1 "$PoolPath/lower-"* | sort -r | head --lines=1)
 
 ls_status() {
-  if [ -d "$PoolDir" ]; then
-    echo "$TargetDir is layersnapped!"
+  if [ -d "$PoolPath" ]; then
+    echo "$TargetPath is layersnapped!"
+    i=0
+    for f in lower-*; do
+      i=$(expr $i + 1)
+      echo $i: $(echo $f | cut -c 7-);
+    done
   else
-    echo "$TargetDir is not layersnapped."
+    echo "$TargetPath is not layersnapped."
   fi
 }
 
@@ -15,27 +20,35 @@ ls_status() {
 #
 
 ls_snapshot() {
-  # --- DEFINE ---# 
+  # define
   Now=$(date "$DateFormat")
-  UpperDir="$PoolDir/upper"
-  LowerDir="$PoolDir/lower-$now"
-  LowerList=""; for f in lower-*; do Paths=$Paths:$(realpath $f); done
-  WorkDir="$PoolDir/work"
-
-  # --- WORK --- #
-  if [ -d "$PoolDir" ]; then
-    mkdir -p "$PoolDir"
-    mkdir "$UpperDir"
-    mkdir "$WorkDir"
-    mv    "$TargetDir" "$LowerDir"
-    mkdir "$TargetDir"
-    mount -t overlay overlay -olowerdir="$LowerDir",upperdir="$UpperDir",workdir="$WorkDir" "$TargetDir" 
+  UpperPath="$PoolPath/upper"
+  LowerPath="$PoolPath/lower-$Now"
+  WorkPath="$PoolPath/work"
+  
+  # do
+  if [ ! -d "$PoolPath" ]; then
+    # first snapshot
+    mkdir -p "$PoolPath"
+    mkdir "$WorkPath"
+    mv    "$TargetPath" "$LowerPath"
+    mkdir "$TargetPath"
   else
-    umount "$TargetDir"
-    mkdir  "$LowerDir"
-    ResentSnapshot=$(ls -1 "$PoolDir/lower-"* | sort -r | head --lines=1)
-    
+    # consecutive snapshots 
+    umount "$TargetPath"
+    mv "$UpperPath" "$LowerPath"
   fi
+  mkdir "$UpperPath"
+
+  # collect lower-paths
+  LowerList=""
+  for f in "$PoolPath/lower-"*; do
+    LowerList=$LowerList:$(realpath $f)
+  done
+  LowerList=$(echo $LowerList | cut -c 2-)
+
+  # mount
+  mount -t overlay overlay -olowerdir="$LowerList",upperdir="$UpperPath",workdir="$WorkPath" "$TargetPath"
 }
 
 #

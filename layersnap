@@ -5,8 +5,8 @@ source /home/ckn/layersnap/params
 source /home/ckn/layersnap/actions
 
 # paths and vars
-TargetName="$(basename $TargetDir)"
-PoolDir="$(dirname $TargetDir)/.layersnap/$TargetName"
+TargetName="$(basename $TargetPath)"
+PoolPath="$(dirname $TargetPath)/.layersnap/$TargetName"
 DateFormat="+%s" #"%Y-%m-%d_%H:%M"
 
 #
@@ -29,28 +29,24 @@ case $ACTION in
   
   # snapshot
   snapshot)
-    # prepare target for snapshot first?
-    if [ ! -d "$PoolDir" ]; then echo "### testdings"; fi
-    echo "$PoolDir"
-    if [ ! -d "$PoolDir" ]; then ls_prepare; fi
     ls_snapshot
   ;;
   
   #merge
   merge)
-    if [ -d "$PoolDir" ]; then
+    if [ -d "$PoolPath" ]; then
       ls_merge
     else
-      echo ERROR: $TargetDir is not layersnapped, so nothing to merge!
+      echo ERROR: $TargetPath is not layersnapped, so nothing to merge!
     fi
   ;;
   
   #restore
   restore)
-    if [ -d "$PoolDir" ]; then
+    if [ -d "$PoolPath" ]; then
       ls_restore
     else
-      echo ERROR: $TargetDir is not layersnapped, so nothing to restore!
+      echo ERROR: $TargetPath is not layersnapped, so nothing to restore!
     fi
   ;;
   
