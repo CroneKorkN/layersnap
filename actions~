@@ -5,11 +5,11 @@
 ls_status() {
   setPoolVars
 
-  echo "LAYERSNAP: $TargetPath" consists of $(expr $LayerCount + 1) layers.
-  i=0
-  for f in "$PoolPath/lower-"*; do
-    i=$(expr $i + 1)
+  echo "LAYERSNAP: $TargetPath" consists of $(expr $LayerCount + 1) layers and is $PoolMounted mounted.
+  
+  i=1; for f in "$PoolPath/lower-"*; do
     layerStatusLine $i $f
+    i=$(expr $i + 1)
   done
   layerStatusLine $(expr $LayerCount + 1) $UpperPath upper
 }
@@ -92,45 +92,6 @@ ls_restore() {
   mv "$LowestPath" "$TargetPath"
   rm -R "$PoolPath"
 }
-
-#
-# merge with previous layer
-#
-
-ls_checkout() {
-  ls_status
-  read -p "Layer to mount: " LayerID
-
-  # collect selected layers
-  i=0
-  LowerList=""
-  for f in "$PoolPath/lower-"*; do
-    i=$(expr $i + 1)
-    LowerList=$(realpath $f):$LowerList
-    if [ "$i" == "$LayerID" ]; then
-      LayerName=$(basename $f | cut -c 7-)
-      break
-    fi
-  done
-  
-  CheckoutPath=$TargetPath-$LayerName
-  mkdir $CheckoutPath
-  
-  # mount
-  mount -t overlay overlay -olowerdir="$LowerList",upperdir="$UpperPath",workdir="$WorkPath" "$CheckoutPath"
-}
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

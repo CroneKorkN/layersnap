@@ -38,10 +38,6 @@ case $ACTION in
     ls_snapshot
   ;;
   
-  checkout)
-    ls_checkout
-  ;;
-  
   #merge
   merge)
     if [ -d "$PoolPath" ]; then

@@ -21,6 +21,13 @@ layerStatusLine() {
 
 # set all the variables needed for working with a layer-pool
 setPoolVars() {
+  # display "not " if Pool is not mounted
+  if mount | grep $TargetPath > /dev/null; then
+    PoolMounted=""
+  else
+    PoolMounted="not "
+  fi
+
   # date in format suitable for use in pathname
   Now=$(date "$DateFormat")
   
@@ -33,7 +40,7 @@ setPoolVars() {
   # path to work dir
   WorkPath="$PoolPath/work"
   
-  # layer-count
+  # total lower-layer-count
   LayerCount=$(find "$PoolPath" -name lower-* | wc -l)
 
   # ":"-seperated list of layer-paths
