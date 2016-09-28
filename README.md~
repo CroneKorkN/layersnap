@@ -1,7 +1,7 @@
 layersnap
 =========
 
-overlayfs- and rsync-based simple snapshots
+overlay(fs)- and rsync-based simple snapshots
 
 # API
 
