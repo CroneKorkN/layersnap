@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# word, count
+# (word, count)
 pluralize() {
  echo "$2 $1$(if [ "$2" != "1" ]; then echo "s"; fi)"
 }
 
-# count, path
+# (count, path)
 layerStatusLine() {
   if [ "$3" != "upper" ]; then
     # lower layers
@@ -47,6 +47,25 @@ setPoolVars() {
   LowerList=""
   for f in "$PoolPath/lower-"*; do
     LowerList="$(realpath "$f"):$LowerList"
+  done
+  LowerList=${LowerList::-1}
+}
+
+# (from-ID, to-ID)
+setLowerList() {
+  if [[ "$1" =~ "^[0-9]+$" ]] && [[ "$1" =~ "^[0-9]+$" ]] ; then
+    from="$1";to="$2"
+  else
+    from="1";to="999999999"
+  fi
+
+  LowerList=""
+  i=1
+  for f in "$PoolPath/lower-"*; do
+    if [ "$i" >= "$from" ] && [ "$i" <= "$to" ] ; then
+      LowerList="$(realpath "$f"):$LowerList"
+    fi
+    i=$(expr $i + 1)
   done
   LowerList=${LowerList::-1}
 }

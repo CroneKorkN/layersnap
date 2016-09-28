@@ -1,6 +1,8 @@
 #!/bin/bash
 
-# ResentSnapshot=$(ls -1 "$PoolPath/lower-"* | sort -r | head --lines=1)
+# 
+# show status and layers
+#
 
 ls_status() {
   setPoolVars
@@ -42,7 +44,6 @@ ls_snapshot() {
   else
     ls_snapshot_consecutive
   fi
-  
   mkdir "$UpperPath"
   ls_mount
 }
@@ -97,10 +98,58 @@ ls_restore() {
 #
 # merge layers
 #
+# - ask for layers to merge
+# - 
+#
+#
+#
 
 ls_merge() {
-  echo "hello"
+  ls_status
+  
+  read -p "Merge layers starting from: " fromLayerID
+  read -p "Merge layers ending with: " toLayerID
+  echo "All layers between and including layers $fromLayerID and $toLayerID will be merged into layer $toLayerID."
+  read -p "Enter 'merge' to confirm: " confirmation
+  if [ ! "$confirmation" == "merge" ]; then
+    echo "aborting."
+    #return 2
+  fi
+  
+  # find toLayer-path
+  i=1
+  for f in "$PoolPath/lower-"*; do
+    if [ "$i" == "$toLayerID" ]; then
+      toLayerPath="$f"
+      break
+    fi
+    i=$(expr $i + 1)
+  done
+  
+  i=1
+  for f in "$PoolPath/lower-"*; do
+    echo $i $fromLayerID
+    if [ "$i" -ge "$fromLayerID" ]; then
+      if [ "$i" -lt "$toLayerID" ]; then
+        echo "merging layer $i into layer $toLayerID"
+        rsync --remove-source-files "$f/"* "$toLayerPath"
+        rmdir "$f"
+      fi
+    fi
+    i=$(expr $i + 1)
+  done
 }
+
+
+
+
+
+
+
+
+
+
+
 
 
 
