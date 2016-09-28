@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# ToDo
+# cache "du *" # inspired by marc schnitzius
+
 # libs
 source /home/ckn/layersnap/lib
 source /home/ckn/layersnap/params
@@ -8,7 +11,7 @@ source /home/ckn/layersnap/actions
 # paths and vars
 TargetName="$(basename $TargetPath)"
 PoolPath="$(dirname $TargetPath)/.layersnap/$TargetName"
-DateFormat="+%s" #"%Y-%m-%d_%H:%M"
+DateFormat="+%s"
 DisplayDateFormat="+%d.%m.%Y %H:%M:%S"
 
 #

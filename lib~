@@ -1,5 +1,16 @@
 #!/bin/bash
 
+
+sizeOf() {
+  location=$(dirname $(realpath $1))
+  name=$(basename $(realpath $1))
+  sizeCachePath="$location/.size_of_$name"
+  if [ ! -e "$cachePath" ]; then
+    echo $(du -sch $1 | head -n 1 | cut -d "	" -f1 ) > $sizeCachePath
+  fi
+  echo "$(cat "$sizeCachePath")"
+}
+
 # (word, count)
 pluralize() {
  echo "$2 $1$(if [ "$2" != "1" ]; then echo "s"; fi)"
@@ -14,18 +25,17 @@ layerStatusLine() {
     # upper layer
     LayerDate=$(printf "%${#LayerDate}s" "now")
   fi
-  LayerSize=$(du -sch $2 | head -n 1 | cut -d "	" -f1 )
   LayerFileCount=$(find $2 -type f | wc -l)
-  echo "layer $(printf "%${#LayerCount}d" $1) from $LayerDate with $LayerSize in $(pluralize "file" $LayerFileCount)"
+  echo "layer $(printf "%${#LayerCount}d" $1) from $LayerDate with $(sizeOf "$2") in $(pluralize "file" $LayerFileCount)"
 }
 
 # set all the variables needed for working with a layer-pool
 setPoolVars() {
   # display "not " if Pool is not mounted
   if mount | grep $TargetPath > /dev/null; then
-    PoolMounted=""
+    PoolMounted="true"
   else
-    PoolMounted="not "
+    PoolMounted="false"
   fi
 
   # date in format suitable for use in pathname
@@ -51,6 +61,18 @@ setPoolVars() {
   LowerList=${LowerList::-1}
 }
 
+# used by --merge
+setToLayerPath() {
+  i=1
+  for f in "$PoolPath/lower-"*; do
+    if [ "$i" == "$toLayerID" ]; then
+      toLayerPath="$f"
+      break
+    fi
+    i=$(expr $i + 1)
+  done
+}
+
 # (from-ID, to-ID)
 setLowerList() {
   if [[ "$1" =~ "^[0-9]+$" ]] && [[ "$1" =~ "^[0-9]+$" ]] ; then
@@ -69,3 +91,40 @@ setLowerList() {
   done
   LowerList=${LowerList::-1}
 }
+
+# (fromLayerPath, toLayerPath)
+mergeLayersByPath() {
+  echo "merging $1 into $2"
+  rsync --remove-source-files "$1/"* "$2"
+  # find "$1/"* -type d -empty -delete
+  
+  # displays message if layer has not been emptied and deleted completely
+  rmdir "$1"
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
