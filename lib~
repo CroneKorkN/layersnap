@@ -5,6 +5,41 @@ pluralize() {
  echo "$2 $1$(if [ "$2" != "1" ]; then echo "s"; fi)"
 }
 
-layerCount() {
-  echo ""
+# count, path
+layerStatusLine() {
+  if [ "$3" != "upper" ]; then
+    # lower layers
+    LayerDate=$(date -d @$(basename $2 | cut -c 7-) "$DisplayDateFormat")
+  else
+    # upper layer
+    LayerDate=$(printf "%${#LayerDate}s" "now")
+  fi
+  LayerSize=$(du -sch $2 | head -n 1 | cut -d "	" -f1 )
+  LayerFileCount=$(find $2 -type f | wc -l)
+  echo "layer $(printf "%${#LayerCount}d" $1) from $LayerDate with $LayerSize in $(pluralize "file" $LayerFileCount)"
+}
+
+# set all the variables needed for working with a layer-pool
+setPoolVars() {
+  # date in format suitable for use in pathname
+  Now=$(date "$DateFormat")
+  
+  # whole path with date
+  LowerPath="$PoolPath/lower-$Now"
+  
+  # path to upper dir
+  UpperPath="$PoolPath/upper"
+  
+  # path to work dir
+  WorkPath="$PoolPath/work"
+  
+  # layer-count
+  LayerCount=$(find "$PoolPath" -name lower-* | wc -l)
+
+  # ":"-seperated list of layer-paths
+  LowerList=""
+  for f in "$PoolPath/lower-"*; do
+    LowerList="$(realpath "$f"):$LowerList"
+  done
+  LowerList=${LowerList::-1}
 }

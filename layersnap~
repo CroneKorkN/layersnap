@@ -21,10 +21,14 @@ case $ACTION in
 
   # status
   status)
-    ls_status
+    if [ ! -d "$PoolPath" ]; then
+      echo "$TargetPath is not layersnapped."
+    else
+      ls_status
+    fi
   ;;
 
-  # prepare
+  # mount
   mount)
     ls_mount
   ;;
