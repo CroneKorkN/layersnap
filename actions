@@ -5,15 +5,19 @@
 ls_status() {
   echo "$PoolPath"
   if [ -d "$PoolPath" ]; then
-    echo
-    echo LAYERSNAP STATUS:
-    echo "$TargetPath" consists of $(find "$PoolPath" -name lower-* | wc -l)+1 layers.
+    LayerCount=$(find "$PoolPath" -name lower-* | wc -l)
+    echo "### LAYERSNAP STATUS ###"
+    echo "$TargetPath" consists of $(expr $LayerCount + 1) layers.
     echo
     i=0
     for f in "$PoolPath/lower-"*; do
       i=$(expr $i + 1)
-      echo $i: $(basename $f | cut -c 7-);
+      LayerDate=$(date -d @$(basename $f | cut -c 7-) "$DisplayDateFormat")
+      LayerSize=$(du -sch $f | head -n 1 | cut -d "	" -f1 )
+      LayerFileCount=$(find $f -type f | wc -l)
+      echo "$(printf "%${#LayerCount}d" $i): $LayerDate ($LayerSize in $(pluralize "file" $LayerFileCount))"
     done
+    echo "$(printf "%${#LayerCount}d" $(expr $LayerCount + 1)): working-layer"
   else
     echo "$TargetPath is not layersnapped."
   fi
@@ -39,6 +43,11 @@ ls_mount() {
 #
 # create new snapshot-layer
 #
+# - unmount layers, except for first snapshot 
+# - make lower-layer from target- or form upper-directory (on first snapshot)
+# - create new empty upper directory
+# - remount layers
+#
 
 ls_snapshot() {
   # define
@@ -47,22 +56,26 @@ ls_snapshot() {
   LowerPath="$PoolPath/lower-$Now"
   WorkPath="$PoolPath/work"
   
-  # do
   if [ ! -d "$PoolPath" ]; then
-    # first snapshot
-    mkdir -p "$PoolPath"
-    mkdir "$WorkPath"
-    mv    "$TargetPath" "$LowerPath"
-    mkdir "$TargetPath"
+    ls_snapshot_first
   else
-    # consecutive snapshots
-    umount "$TargetPath"
-    mv "$UpperPath" "$LowerPath"
+    ls_snapshot_consecutive
   fi
+  
   mkdir "$UpperPath"
-
-  # mount
   ls_mount
+}
+
+ls_snapshot_first() {
+  mkdir -p "$PoolPath"
+  mkdir "$WorkPath"
+  mv    "$TargetPath" "$LowerPath"
+  mkdir "$TargetPath"
+}
+
+ls_snapshot_consecutive() {
+  umount "$TargetPath"
+  mv "$UpperPath" "$LowerPath"
 }
 
 #

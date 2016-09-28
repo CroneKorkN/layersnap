@@ -1,0 +1,10 @@
+#!/bin/bash
+
+# word, count
+pluralize() {
+ echo "$2 $1$(if [ "$2" != "1" ]; then echo "s"; fi)"
+}
+
+layerCount() {
+  echo ""
+}
