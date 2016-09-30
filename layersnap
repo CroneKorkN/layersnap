@@ -1,15 +1,87 @@
 #!/bin/bash
 
+# layersnap
+# 
+# overlayfs- and rsync-based simple snapshots
+#
+# - ls_bootstrap is called at the EOF
+# - ls_bootstrap calls parseRequest and calls the appropriate controller
+# - controller uses helpers to do the job
+#
+# todo
+# ubuntu 12.04 syntax
 
 
-          #############
-          #############
-          ##         ##
-          ## ACTIONS ##
-          ##         ##
-          #############
-          #############
+##############
+##############
+##          ##
+##  ROUTER  ##
+##          ##
+##############
+##############
 
+
+#
+# status, prepare, snapshot, merge or restore?
+#
+
+ls_bootstrap() {
+  parseRequest
+  
+  # basic paths and vars
+  TargetName="$(basename $TargetPath)"
+  PoolPath="$(dirname $TargetPath)/.layersnap/$TargetName"
+  DateFormat="+%s"
+  DisplayDateFormat="+%d.%m.%Y %H:%M:%S"
+
+
+  case $ACTION in
+
+    # status
+    status)
+      if [ ! -d "$PoolPath" ]
+      then
+        echo "$TargetPath is not layersnapped."
+      else
+        ls_status
+      fi
+    ;;
+
+    # snapshot
+    snapshot)
+      ls_snapshot
+    ;;
+    
+    #merge
+    merge)
+      if [ -d "$PoolPath" ]
+      then
+        ls_merge
+      else
+        echo ERROR: $TargetPath is not layersnapped, so nothing to merge!
+      fi
+    ;;
+    
+    #restore
+    restore)
+      if [ -d "$PoolPath" ]
+      then
+        ls_restore
+      else
+        echo ERROR: $TargetPath is not layersnapped, so nothing to restore!
+      fi
+    ;;
+  esac
+}
+
+
+###################
+###################
+##               ##
+##  CONTROLLERS  ##
+##               ##
+###################
+###################
 
 
 # 
@@ -132,10 +204,13 @@ ls_merge() {
   setToLayerPath
   
   i=1
-  for f in "$PoolPath/lower-"*; do
-    if [ "$i" -ge "$fromLayerID" ] && [ "$i" -lt "$toLayerID" ]; then
+  for f in "$PoolPath/lower-"*
+  do
+    if [ "$i" -ge "$fromLayerID" ] && [ "$i" -lt "$toLayerID" ]
+    then
       mergeLayersByPath $f $toLayerPath
-    elif [ "$i" -ge "$toLayerID" ]; then
+    elif [ "$i" -ge "$toLayerID" ]
+    then
       break
     fi
     i=$(expr $i + 1)
@@ -145,35 +220,36 @@ ls_merge() {
 }
 
 
-
-          ###############
-          ###############
-          ##           ##
-          ## FUNCTIONS ##
-          ##           ##
-          ###############
-          ###############
-
+#############
+#############
+##         ##
+## HELPERS ##
+##         ##
+#############
+#############
 
 
-sizeOf() {
+# get human readable total size of directory
+sizeOfDir() { # (pathname)
   location=$(dirname $(realpath $1))
   name=$(basename $(realpath $1))
   sizeCachePath="$location/.size_of_$name"
-  if [ ! -e "$sizeCachePath" ]; then
+  if [ ! -e "$sizeCachePath" ]
+  then
     echo $(du -sch $1 | head -n 1 | cut -d "	" -f1 ) > $sizeCachePath
   fi
   echo "$(cat "$sizeCachePath")"
 }
 
-# (word, count)
-pluralize() {
+# output number and pluralized version of word if needed
+pluralize() { # (word, count)
  echo "$2 $1$(if [ "$2" != "1" ]; then echo "s"; fi)"
 }
 
-# (count, path)
-layerStatusLine() {
-  if [ "$3" != "upper" ]; then
+# compose status line of layer
+layerStatusLine() { # (count, path)
+  if [ "$3" != "upper" ]
+  then
     # lower layers
     LayerDate=$(date -d @$(basename $2 | cut -c 7-) "$DisplayDateFormat")
   else
@@ -181,13 +257,14 @@ layerStatusLine() {
     LayerDate=$(printf "%${#LayerDate}s" "now")
   fi
   LayerFileCount=$(find $2 -type f | wc -l)
-  echo "layer $(printf "%${#LayerCount}d" $1) from $LayerDate with $(sizeOf "$2") in $(pluralize "file" $LayerFileCount)"
+  echo "layer $(printf "%${#LayerCount}d" $1) from $LayerDate with $(sizeOfDir "$2") in $(pluralize "file" $LayerFileCount)"
 }
 
 # set all the variables needed for working with a layer-pool
 setPoolVars() {
   # display "not " if Pool is not mounted
-  if mount | grep $TargetPath > /dev/null; then
+  if mount | grep $TargetPath > /dev/null
+  then
     PoolMounted="true"
   else
     PoolMounted="false"
@@ -210,7 +287,8 @@ setPoolVars() {
 
   # ":"-seperated list of layer-paths
   LowerList=""
-  for f in "$PoolPath/lower-"*; do
+  for f in "$PoolPath/lower-"*
+  do
     LowerList="$(realpath "$f"):$LowerList"
   done
   LowerList=${LowerList::-1}
@@ -219,8 +297,10 @@ setPoolVars() {
 # used by --merge
 setToLayerPath() {
   i=1
-  for f in "$PoolPath/lower-"*; do
-    if [ "$i" == "$toLayerID" ]; then
+  for f in "$PoolPath/lower-"*
+  do
+    if [ "$i" == "$toLayerID" ]
+    then
       toLayerPath="$f"
       break
     fi
@@ -228,9 +308,10 @@ setToLayerPath() {
   done
 }
 
-# (from-ID, to-ID)
-setLowerList() {
-  if [[ "$1" =~ "^[0-9]+$" ]] && [[ "$1" =~ "^[0-9]+$" ]] ; then
+# sets LowerList-variable 
+setLowerList() { # (from-ID, to-ID)
+  if [[ "$1" =~ "^[0-9]+$" ]] && [[ "$1" =~ "^[0-9]+$" ]]
+  then
     from="$1";to="$2"
   else
     from="1";to="999999999"
@@ -238,8 +319,10 @@ setLowerList() {
 
   LowerList=""
   i=1
-  for f in "$PoolPath/lower-"*; do
-    if [ "$i" >= "$from" ] && [ "$i" <= "$to" ] ; then
+  for f in "$PoolPath/lower-"*
+  do
+    if [ "$i" >= "$from" ] && [ "$i" <= "$to" ]
+    then
       LowerList="$(realpath "$f"):$LowerList"
     fi
     i=$(expr $i + 1)
@@ -247,8 +330,8 @@ setLowerList() {
   LowerList=${LowerList::-1}
 }
 
-# (fromLayerPath, toLayerPath)
-mergeLayersByPath() {
+# merges one directory into another, overwriting existing files 
+mergeLayersByPath() { # (fromLayerPath, toLayerPath)
   echo "merging $1 into $2"
   rsync --remove-source-files "$1/"* "$2"
   # find "$1/"* -type d -empty -delete
@@ -257,107 +340,71 @@ mergeLayersByPath() {
   rmdir "$1"
 }
 
+     
+# parse request params
+parseRequest() { # ()
+  while [ $# -gt 1 ]
+  do
+    echo $#
+    echo $1
+    shift
+  done
+
+  read
+
+  ACTION=status
+  while [ $# -gt 1 ]
+  do
+    key="$1"
+    case $key in
+      -m|--mount)
+        ACTION=mount 
+        shift
+      ;;
+
+      -s|--snapshot)
+        ACTION=snapshot
+        shift
+      ;;
+
+      -c|--checkout)
+        ACTION=checkout
+        shift
+      ;;
+
+      -r|--restore)
+        ACTION=restore
+        VALUE="$2"
+        shift
+      ;;
+
+      -m|--merge)
+        ACTION=merge
+        shift
+      ;;
+    esac
+  done
+
+  # last param
+  if [[ -n $1 ]]; then
+    #TargetPath=$(realpath $1) # bug: follows symlink
+    TargetPath="$(pwd)/$1"
+  else
+    echo "ERROR: please provide a target-dir!"
+  fi
+}
 
 
-          ################
-          ################
-          ##            ##
-          ## CONTROLLER ##
-          ##            ##
-          ################
-          ################
-          
-          
-          
-# "-" params
-ACTION=status
-while [[ $# -gt 1 ]]
-do
-  key="$1"
-  case $key in
-    -m|--mount)
-      ACTION=mount 
-      shift
-    ;;
-
-    -s|--snapshot)
-      ACTION=snapshot
-      shift
-    ;;
-
-    -c|--checkout)
-      ACTION=checkout
-      shift
-    ;;
-
-    -r|--restore)
-      ACTION=restore
-      VALUE="$2"
-      shift
-    ;;
-
-    -m|--merge)
-      ACTION=merge
-      shift
-    ;;
-  esac
-done
-
-# last param
-if [[ -n $1 ]]; then
-  #TargetPath=$(realpath $1) # bug: follows symlink
-  TargetPath="$(pwd)/$1"
-else
-  echo "ERROR: please provide a target-dir!"
-fi
-
-# basic paths and vars
-TargetName="$(basename $TargetPath)"
-PoolPath="$(dirname $TargetPath)/.layersnap/$TargetName"
-DateFormat="+%s"
-DisplayDateFormat="+%d.%m.%Y %H:%M:%S"
-
-# status, prepare, snapshot, merge or restore?
-case $ACTION in
-
-  # status
-  status)
-    if [ ! -d "$PoolPath" ]; then
-      echo "$TargetPath is not layersnapped."
-    else
-      ls_status
-    fi
-  ;;
-
-  # snapshot
-  snapshot)
-    ls_snapshot
-  ;;
-  
-  #merge
-  merge)
-    if [ -d "$PoolPath" ]; then
-      ls_merge
-    else
-      echo ERROR: $TargetPath is not layersnapped, so nothing to merge!
-    fi
-  ;;
-  
-  #restore
-  restore)
-    if [ -d "$PoolPath" ]; then
-      ls_restore
-    else
-      echo ERROR: $TargetPath is not layersnapped, so nothing to restore!
-    fi
-  ;;
-esac
+###############
+###############
+##           ##
+## BOOTSTRAP ##
+##           ##
+###############
+###############
 
 
-
-
-
-
+ls_bootstrap
 
 
 
