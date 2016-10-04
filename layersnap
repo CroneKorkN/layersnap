@@ -8,8 +8,16 @@
 # - ls_bootstrap calls parseRequest and calls the appropriate controller
 # - controller uses helpers to do the job
 #
+
+#
+# convention:
+# - GlobalVariable
+# - localVariable
+#
 # todo
 # ubuntu 12.04 syntax
+# $((2 ** 4))
+
 
 
 ##############
@@ -25,15 +33,24 @@
 # status, prepare, snapshot, merge or restore?
 #
 
-ls_bootstrap() {
-  parseRequest
+ls_bootstrap() { # (request)
+  # parse request parameters
+  parseRequest $*
   
+  # choose mode
+  setMode
+  if [ "$LSMode" == "0" ]
+  then
+    echo "Sorry, but your System is not capable of running layersnap."
+    echo "Layersnap depends on overlayfs, which was included in kernel 3.18 and extended by support of multiple lower-layers in 4.0. Besides that, Ubuntu supports overlayfs partly since at least 12.04 and fully since at least 14.04"
+    exit
+  fi 
+
   # basic paths and vars
   TargetName="$(basename $TargetPath)"
   PoolPath="$(dirname $TargetPath)/.layersnap/$TargetName"
   DateFormat="+%s"
   DisplayDateFormat="+%d.%m.%Y %H:%M:%S"
-
 
   case $ACTION in
 
@@ -90,14 +107,21 @@ ls_bootstrap() {
 
 ls_status() {
   setPoolVars
-  if [ ! "$PoolMounted" == "true" ]; then
+  
+  # ensure target is mounted
+  if [ ! "$PoolMounted" == "true" ]
+  then
     ls_mount
     echo "layers have just been mounted."
   fi
-
-  echo "LAYERSNAP: $TargetPath" consists of $(expr $LayerCount + 1) layers.
   
-  i=1; for f in "$PoolPath/lower-"*; do
+  # display summerizing information
+  echo "LAYERSNAP: $TargetPath consists of $(expr $LayerCount + 1) layers. $(pluralize "layer" $LayersAvailable) available."
+  
+  # show detailed inforamtion for each layer
+  i=1
+  for f in "$PoolPath/lower-"*
+  do
     layerStatusLine $i $f
     i=$(expr $i + 1)
   done
@@ -109,10 +133,18 @@ ls_status() {
 #
 
 ls_mount() {
-  setPoolVars
-  
-  # mount
-  mount -t overlay overlay -olowerdir="$LowerList",upperdir="$UpperPath",workdir="$WorkPath" "$TargetPath"
+  # select mode
+  case $LSMode in
+    1)
+      mount -t overlayfs -o rw,lowerdir="$LowerList",upperdir="$UpperPath" overlayfs "$TargetPath"
+    ;;
+    2)
+
+    ;;
+    3)
+      mount -t overlay overlay -o rw,lowerdir="$LowerList",upperdir="$UpperPath",workdir="$WorkPath" "$TargetPath"
+    ;;
+  esac
 }
 
 #
@@ -126,26 +158,63 @@ ls_mount() {
 
 ls_snapshot() {
   setPoolVars
-  
-  if [ ! -d "$PoolPath" ]; then
-    ls_snapshot_first
+
+  # select mode
+  case $LSMode in
+    1)
+      ls_snapshot_mode1_mode3
+    ;;
+    2)
+      ls_snapshot_mode2
+    ;;
+    3)
+      ls_snapshot_mode1_mode3
+    ;;
+  esac
+}
+
+ls_snapshot_mode1_mode3() {
+  # initial or consecutive snapshot?
+  if [ ! -d "$PoolPath" ]
+  then
+    # create pool dir
+    mkdir -p "$PoolPath"
+    
+    # create workdir if mode3
+    if [ "$LSMode" == "3" ]
+    then
+      mkdir "$WorkPath"
+    fi
+    
+    # make target dir the mew lower dir
+    mv    "$TargetPath" "$LowerPath"
+    
+    # create new target dir as mountpoint
+    mkdir "$TargetPath"
   else
-    ls_snapshot_consecutive
+    # abort when trying to make a socend snapshot in mode1
+    if [ "$LSMode" == "1" ]
+    then
+      echo "Sorry, your system only allows one snapshot."
+      exit
+    fi
+    
+    # unmount target dir
+    umount "$TargetPath"
+    
+    # make target dir the mew lower dir
+    mv    "$TargetPath" "$LowerPath"
   fi
+
+  # create upper dir anyway
   mkdir "$UpperPath"
+  
+  # mount it
   ls_mount
 }
 
-ls_snapshot_first() {
-  mkdir -p "$PoolPath"
-  mkdir "$WorkPath"
-  mv    "$TargetPath" "$LowerPath"
-  mkdir "$TargetPath"
-}
-
-ls_snapshot_consecutive() {
-  umount "$TargetPath"
-  mv "$UpperPath" "$LowerPath"
+ls_snapshot_mode2() {
+  ls
 }
 
 #
@@ -229,6 +298,37 @@ ls_merge() {
 #############
 
 
+# choose layersnap mode fitting the host-system
+setMode() {
+  # try to check by ubuntu-version first, then by kernel-version
+  if [ "$(cat /etc/issue | grep -c Ubuntu)" -gt "0" ]
+  then
+    ubuntuMainVersion=$(cat /etc/lsb-release | grep DISTRIB_RELEASE | cut -c 17- | cut -d "." -f1)
+    ubuntuSubVersion=$(cat /etc/lsb-release | grep DISTRIB_RELEASE | cut -c 17- | cut -d "." -f2)
+  else
+    kernelMainVersion=$(uname -r | cut -d "." -f1)
+    kernelSubVersion=$(uname -r | cut -d "." -f2)
+  fi
+  
+  if [ "$ubuntuMainVersion" -ge "14" ] && [ "$ubuntuSubVersion" -ge "04" ]
+  then
+    LSMode="3"
+  elif   [ "$ubuntuMainVersion" -ge "12" ] && [ "$ubuntuSubVersion" -ge "04" ]
+  then
+    LSMode="1"
+  elif [ "$kernelMainVersion" == "4" ]
+  then
+    LSMode="3"
+  elif [ "$kernelMainVersion" == "3" ]   && [ "$kernelSubVersion" -ge "18" ]
+  then
+    LSMode="2"
+  else
+    LSMode="0"
+  fi
+
+  LSMode="1"
+}
+
 # get human readable total size of directory
 sizeOfDir() { # (pathname)
   location=$(dirname $(realpath $1))
@@ -292,6 +392,14 @@ setPoolVars() {
     LowerList="$(realpath "$f"):$LowerList"
   done
   LowerList=${LowerList::-1}
+  
+  # calculate number of still available layers
+  if [ "$LSMode" == "3" ]
+  then
+    LayersAvailable="Unlimited"
+  else
+    LayersAvailable=$(expr "$LSMode" - "$LayerCount")
+  fi
 }
 
 # used by --merge
@@ -343,52 +451,43 @@ mergeLayersByPath() { # (fromLayerPath, toLayerPath)
      
 # parse request params
 parseRequest() { # ()
-  while [ $# -gt 1 ]
-  do
-    echo $#
-    echo $1
-    shift
-  done
-
-  read
-
-  ACTION=status
-  while [ $# -gt 1 ]
+  ACTION="status"
+  while [[ $# -gt 1 ]]
   do
     key="$1"
     case $key in
       -m|--mount)
-        ACTION=mount 
+        ACTION="mount"
         shift
       ;;
 
       -s|--snapshot)
-        ACTION=snapshot
+        ACTION="snapshot"
         shift
       ;;
 
       -c|--checkout)
-        ACTION=checkout
+        ACTION="checkout"
         shift
       ;;
 
       -r|--restore)
-        ACTION=restore
-        VALUE="$2"
+        ACTION="restore"
         shift
       ;;
 
       -m|--merge)
-        ACTION=merge
+        ACTION="merge"
         shift
       ;;
     esac
   done
 
   # last param
-  if [[ -n $1 ]]; then
-    #TargetPath=$(realpath $1) # bug: follows symlink
-    TargetPath="$(pwd)/$1"
+  if [[ -n $1 ]]
+  then
+    TargetPath=$(realpath $1)
+    #TargetPath="$(pwd)/$1"
   else
     echo "ERROR: please provide a target-dir!"
   fi
@@ -404,8 +503,8 @@ parseRequest() { # ()
 ###############
 
 
-ls_bootstrap
-
+# bootstrap and pass request params
+ls_bootstrap $*
 
 
 
