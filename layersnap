@@ -13,6 +13,9 @@
 # convention:
 # - GlobalVariable
 # - localVariable
+# terminology:
+# - layer: one single directory
+# - snapshot: a directory with all previous layers
 #
 # todo
 # ubuntu 12.04 syntax
@@ -129,9 +132,15 @@ ls_mount() {
   # select mode
   case $LSMode in
     1)
-      mount -t overlayfs -o rw,lowerdir="$LowerList",upperdir="$UpperPath" overlayfs "$TargetPath"
+      if mode1First
+        mount -t overlayfs -o rw,lowerdir="$LowerList",upperdir="$UpperPath" overlayfs "$TargetPath"
+      else
+        mount -t overlayfs -o rw,lowerdir="$LowerList",upperdir="$UpperPath" overlayfs "$MergePath"
+        mount -t overlayfs -o rw,lowerdir="$MergePath",upperdir="$UpperPath"2 overlayfs "$TargetPath"
+      fi
     ;;
     2)
+      mount -t overlay overlay -o rw,lowerdir="$LowerList",upperdir="$UpperPath",workdir="$WorkPath" "$TargetPath"
       mount -t overlay overlay -o rw,lowerdir="$LowerList",upperdir="$UpperPath",workdir="$WorkPath" "$TargetPath"
     ;;
   esac
@@ -158,18 +167,43 @@ ls_snapshot() {
       ls_snapshot_mode2
     ;;
   esac
+  
+  # mount it
+  ls_mount
 }
 
+ # two-layer-mode
 ls_snapshot_mode1() {
-  if   [ "$LayersAvailable" == "2" ]
+  # check 
+  if mode1First
   then
-    ls
-  elif [ "$LayersAvailable" == "1" ]
-  then
-    ls
+    # create pool dir
+    mkdir -p "$PoolPath"
+    
+    # create work dir
+    mkdir "$WorkPath"
+
+    # create upper dir
+    mkdir "$UpperPath"
+
+    # make target dir the lower dir
+    mv    "$TargetPath" "$LowerPath"
+    
+    # create new target dir as mountpoint
+    mkdir "$TargetPath"
+  else
+    # unmount target dir
+    umount "$TargetPath"
+    
+    # create work2 dir
+    mkdir "$WorkPath"2
+
+    # create upper2 dir
+    mkdir "$UpperPath"2
   fi
 }
 
+# unlimited mode
 ls_snapshot_mode2() {
   # initial or consecutive snapshot?
   if [ ! -d "$PoolPath" ]
@@ -195,9 +229,6 @@ ls_snapshot_mode2() {
 
   # create upper dir anyway
   mkdir "$UpperPath"
-  
-  # mount it
-  ls_mount
 }
 
 #
@@ -210,28 +241,53 @@ ls_snapshot_mode2() {
 #
 
 ls_restore() {
+  # show status screen first
   ls_status
+  
+  # get user input, which snapshot to restore
   read -p "Snapshot ID to restore: " toLayerID
-
+  
+  # confirm
+  read -p "Enter 'restore' to confirm: " confirmation
+  if [ ! "$confirmation" == "restore" ]; then
+    echo "aborting."
+    return 2
+  fi
+  
+  # unmount and remove target
   umount "$TargetPath"
   rmdir  "$TargetPath"
-    
+  
+  # initialize iterator
   i=1
+  
+  # iterate through lower-dirs
   for f in "$PoolPath/lower-"*; do
-    # remember lowest layer and merge all upper layer into it
     if [ "$i" == 1 ]; then
+      # remember lowest layer
       LowestPath="$f"
     else
+      # merge upper layers into remembered lowest it
       mergeLayersByPath "$f/" "$LowestPath"
     fi
-    if [ "$i" == "$toLayerID" ]; then break; fi
+    
+    # check if target-layer reached
+    if [ "$i" == "$toLayerID" ]
+    then
+      # stop merging
+      break
+    fi
+    
+    # increase iterator
     i=$(expr $i + 1)
   done
   
+  # make merged dir the target dir
   mv "$LowestPath" "$TargetPath"
+
+  # remove leftovers
   rm -R "$PoolPath"
 }
-
 
 #
 # merge layers
@@ -241,33 +297,46 @@ ls_restore() {
 #
 
 ls_merge() {
+  # show status screen first
   ls_status
-  
+
+  # get user input, which layers to merge
   read -p "Merge layers starting from: " fromLayerID
   read -p "Merge layers ending with: " toLayerID
+  
+  # confirm
   echo "All layers between and including layers $fromLayerID and $toLayerID will be merged into layer $toLayerID."
   read -p "Enter 'merge' to confirm: " confirmation
   if [ ! "$confirmation" == "merge" ]; then
     echo "aborting."
-    #return 2
+    return 2
   fi
   
   # find toLayer-path
   setToLayerPath
   
+  # initialize iterator
   i=1
+  
+  # iterate through lower-dirs
   for f in "$PoolPath/lower-"*
   do
+    # check if layer is affected
     if [ "$i" -ge "$fromLayerID" ] && [ "$i" -lt "$toLayerID" ]
     then
+      # merge
       mergeLayersByPath $f $toLayerPath
     elif [ "$i" -ge "$toLayerID" ]
     then
+      # break if last layer reached
       break
     fi
+    
+    # increase iterator
     i=$(expr $i + 1)
   done
   
+  # feedback
   echo "done"
 }
 
@@ -279,6 +348,16 @@ ls_merge() {
 ##         ##
 #############
 #############
+
+
+mode1First() {
+  if [ ! -d $(echo "$UpperPath"2) ]
+  then
+    return 1
+  else
+    return 2
+  fi
+}
 
 
 # choose layersnap mode fitting the host-system
@@ -293,6 +372,7 @@ setMode() {
     kernelSubVersion=$(uname -r | cut -d "." -f2)
   fi
   
+  # set layersnap-mode
   if [ "$ubuntuMainVersion" -ge "14" ] && [ "$ubuntuSubVersion" -ge "04" ]
   then
     LSMode="2"
@@ -308,20 +388,34 @@ setMode() {
   else
     LSMode="0"
   fi
-  
-  echo  $LSMode
 }
 
 # get human readable total size of directory
 sizeOfDir() { # (pathname)
+  # get dirname
   location=$(dirname $(realpath $1))
+  
+  # get basename
   name=$(basename $(realpath $1))
+  
+  # generate cache path out of dirname and basename
   sizeCachePath="$location/.size_of_$name"
-  if [ ! -e "$sizeCachePath" ]
+  
+  # check if dir-size already been cached
+  if [ -e "$sizeCachePath" ]
   then
-    echo $(du -sch $1 | head -n 1 | cut -d "	" -f1 ) > $sizeCachePath
-  fi
-  echo "$(cat "$sizeCachePath")"
+    # read size from cache
+    echo "$(cat "$sizeCachePath")"
+  else
+    # calculate size
+    dirSize=$(du -sch $1 | head -n 1 | cut -d "	" -f1 )
+    
+    # write cache
+    echo "$dirSize" > $sizeCachePath
+    
+    # echo size
+    echo "$dirSize"
+  fi 
 }
 
 # output number and pluralized version of word if needed
@@ -422,13 +516,17 @@ setLowerList() { # (from-ID, to-ID)
   # iterate through lower paths
   for f in "$PoolPath/lower-"*
   do
-    if [ "$i" >= "$from" ] && [ "$i" <= "$to" ]
+    # check if layer is within selected range
+    if [ "$i" -ge "$from" ] && [ "$i" -le "$to" ]
     then
-      # if layer is within selected range, add its absolute path to the LowerList
+      # add layers absolute path to the LowerList in the correct order for overlayfs-syntax
       LowerList="$(realpath "$f"):$LowerList"
     fi
+    # raise iterator anyway
     i=$(expr $i + 1)
   done
+  
+  # remove trailing colon
   LowerList=${LowerList::-1}
 }
 
@@ -442,9 +540,8 @@ mergeLayersByPath() { # (fromLayerPath, toLayerPath)
   rmdir "$1"
 }
 
-     
 # parse request params
-parseRequest() { # ()
+parseRequest() { # ($*)
   ACTION="status"
   while [[ $# -gt 1 ]]
   do
@@ -473,7 +570,7 @@ parseRequest() { # ()
   done
 
   # last param
-  if [[ -n $1 ]]
+  if [ -n "$1" ]
   then
     TargetPath=$(realpath $1)
     #TargetPath="$(pwd)/$1"
@@ -492,7 +589,7 @@ parseRequest() { # ()
 ###############
 
 
-# bootstrap and pass request params
+# call bootstrapper and pass request params
 ls_bootstrap $*
 
 
