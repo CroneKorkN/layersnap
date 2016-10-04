@@ -37,13 +37,11 @@ ls_bootstrap() { # (request)
   # parse request parameters
   parseRequest $*
   
-  # set mode depending on host-system
+  # choose mode
   setMode
-  
-  # exit if layersnap is not supported
   if [ "$LSMode" == "0" ]
   then
-    echo "ABORTING: Sorry, but your System is not capable of running layersnap."
+    echo "Sorry, but your System is not capable of running layersnap."
     echo "Layersnap depends on overlayfs, which was included in kernel 3.18 and extended by support of multiple lower-layers in 4.0. Besides that, Ubuntu supports overlayfs partly since at least 12.04 and fully since at least 14.04"
     exit
   fi 
@@ -53,31 +51,42 @@ ls_bootstrap() { # (request)
   PoolPath="$(dirname $TargetPath)/.layersnap/$TargetName"
   DateFormat="+%s"
   DisplayDateFormat="+%d.%m.%Y %H:%M:%S"
-  
-  # exit with message if target is not layersnapped
-  if [ ! -d "$PoolPath" ]
-  then
-    echo ABORTING: $TargetPath is not layersnapped, so nothing to $ACTION!
-    exit
-  fi
-  
-  # jeahjeahjeah
+
   case $ACTION in
 
+    # status
     status)
-      ls_status
+      if [ ! -d "$PoolPath" ]
+      then
+        echo "$TargetPath is not layersnapped."
+      else
+        ls_status
+      fi
     ;;
 
+    # snapshot
     snapshot)
       ls_snapshot
     ;;
     
+    #merge
     merge)
-      ls_merge
+      if [ -d "$PoolPath" ]
+      then
+        ls_merge
+      else
+        echo ERROR: $TargetPath is not layersnapped, so nothing to merge!
+      fi
     ;;
     
+    #restore
     restore)
-      ls_restore
+      if [ -d "$PoolPath" ]
+      then
+        ls_restore
+      else
+        echo ERROR: $TargetPath is not layersnapped, so nothing to restore!
+      fi
     ;;
   esac
 }
@@ -116,8 +125,6 @@ ls_status() {
     layerStatusLine $i $f
     i=$(expr $i + 1)
   done
-  
-  # show final status line for upper directory
   layerStatusLine $(expr $LayerCount + 1) $UpperPath upper
 }
 
@@ -132,6 +139,9 @@ ls_mount() {
       mount -t overlayfs -o rw,lowerdir="$LowerList",upperdir="$UpperPath" overlayfs "$TargetPath"
     ;;
     2)
+
+    ;;
+    3)
       mount -t overlay overlay -o rw,lowerdir="$LowerList",upperdir="$UpperPath",workdir="$WorkPath" "$TargetPath"
     ;;
   esac
@@ -152,33 +162,29 @@ ls_snapshot() {
   # select mode
   case $LSMode in
     1)
-      ls_snapshot_mode1
+      ls_snapshot_mode1_mode3
     ;;
     2)
       ls_snapshot_mode2
     ;;
+    3)
+      ls_snapshot_mode1_mode3
+    ;;
   esac
 }
 
-ls_snapshot_mode1() {
-  if   [ "$LayersAvailable" == "2" ]
-  then
-    ls
-  elif [ "$LayersAvailable" == "1" ]
-  then
-    ls
-  fi
-}
-
-ls_snapshot_mode2() {
+ls_snapshot_mode1_mode3() {
   # initial or consecutive snapshot?
   if [ ! -d "$PoolPath" ]
   then
     # create pool dir
     mkdir -p "$PoolPath"
     
-    # create work dir
-    mkdir "$WorkPath"
+    # create workdir if mode3
+    if [ "$LSMode" == "3" ]
+    then
+      mkdir "$WorkPath"
+    fi
     
     # make target dir the mew lower dir
     mv    "$TargetPath" "$LowerPath"
@@ -186,11 +192,18 @@ ls_snapshot_mode2() {
     # create new target dir as mountpoint
     mkdir "$TargetPath"
   else
+    # abort when trying to make a socend snapshot in mode1
+    if [ "$LSMode" == "1" ]
+    then
+      echo "Sorry, your system only allows one snapshot."
+      exit
+    fi
+    
     # unmount target dir
     umount "$TargetPath"
     
     # make target dir the mew lower dir
-    mv    "$UpperPath" "$LowerPath"
+    mv    "$TargetPath" "$LowerPath"
   fi
 
   # create upper dir anyway
@@ -198,6 +211,10 @@ ls_snapshot_mode2() {
   
   # mount it
   ls_mount
+}
+
+ls_snapshot_mode2() {
+  ls
 }
 
 #
@@ -308,8 +325,8 @@ setMode() {
   else
     LSMode="0"
   fi
-  
-  echo  $LSMode
+
+  # LSMode="1"
 }
 
 # get human readable total size of directory
@@ -345,7 +362,7 @@ layerStatusLine() { # (count, path)
 
 # set all the variables needed for working with a layer-pool
 setPoolVars() {
-  # check if pool is mounted
+  # display "not " if Pool is not mounted
   if mount | grep $TargetPath > /dev/null
   then
     PoolMounted="true"
@@ -377,7 +394,7 @@ setPoolVars() {
   LowerList=${LowerList::-1}
   
   # calculate number of still available layers
-  if [ "$LSMode" == "2" ]
+  if [ "$LSMode" == "3" ]
   then
     LayersAvailable="Unlimited"
   else
@@ -401,30 +418,19 @@ setToLayerPath() {
 
 # sets LowerList-variable 
 setLowerList() { # (from-ID, to-ID)
-  # check if params are set and are integers
   if [[ "$1" =~ "^[0-9]+$" ]] && [[ "$1" =~ "^[0-9]+$" ]]
   then
-    # if params are set, use them
-    from="$1"
-    to="$2"
+    from="$1";to="$2"
   else
-    # unless params are set, select all layers
-    from="1"
-    to="999999999"
+    from="1";to="999999999"
   fi
-  
-  # reset LowerList
+
   LowerList=""
-  
-  # reset iterator
   i=1
-  
-  # iterate through lower paths
   for f in "$PoolPath/lower-"*
   do
     if [ "$i" >= "$from" ] && [ "$i" <= "$to" ]
     then
-      # if layer is within selected range, add its absolute path to the LowerList
       LowerList="$(realpath "$f"):$LowerList"
     fi
     i=$(expr $i + 1)
@@ -450,6 +456,11 @@ parseRequest() { # ()
   do
     key="$1"
     case $key in
+      -m|--mount)
+        ACTION="mount"
+        shift
+      ;;
+
       -s|--snapshot)
         ACTION="snapshot"
         shift
