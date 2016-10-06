@@ -4,22 +4,23 @@
 # 
 # overlayfs- and rsync-based simple snapshots
 #
+# programme-structure:
 # - ls_bootstrap is called at the EOF
-# - ls_bootstrap calls parseRequest and calls the appropriate controller
+# - ls_bootstrap calls parse_request and calls the appropriate controller
 # - controller uses helpers to do the job
-#
-
 #
 # convention:
 # - GlobalVariable
 # - localVariable
+# - function_name()
+#
 # terminology:
 # - layer: one single directory
 # - snapshot: a directory with all previous layers
 #
-# todo
-# ubuntu 12.04 syntax
-# $((2 ** 4))
+# todo:
+# - ubuntu 12.04 syntax
+# - $((2 ** 4))
 
 
 
@@ -38,10 +39,10 @@
 
 ls_bootstrap() { # (request)
   # parse request parameters
-  parseRequest $*
+  parse_request $*
   
   # set mode depending on host-system
-  setMode
+  set_mode
   
   # exit if layersnap is not supported
   if [ "$LSMode" == "0" ]
@@ -100,7 +101,7 @@ ls_bootstrap() { # (request)
 #
 
 ls_status() {
-  setPoolVars
+  set_pool_vars
   
   # ensure target is mounted
   if [ ! "$PoolMounted" == "true" ]
@@ -116,12 +117,12 @@ ls_status() {
   i=1
   for f in "$PoolPath/lower-"*
   do
-    layerStatusLine $i $f
+    layer_status_line $i $f
     i=$(expr $i + 1)
   done
   
   # show final status line for upper directory
-  layerStatusLine $(expr $LayerCount + 1) $UpperPath upper
+  layer_status_line $(expr $LayerCount + 1) $UpperPath upper
 }
 
 #
@@ -156,7 +157,7 @@ ls_mount() {
 #
 
 ls_snapshot() {
-  setPoolVars
+  set_pool_vars
 
   # select mode
   case $LSMode in
@@ -177,26 +178,17 @@ ls_snapshot_mode1() {
   # check 
   if mode1First
   then
-    # create pool dir
-    mkdir -p "$PoolPath"
-    
-    # create work dir
-    mkdir "$WorkPath"
-
-    # create upper dir
-    mkdir "$UpperPath"
+    # create pool-, work-, upper-dir
+    mkdir -p "$PoolPath" "$UpperPath" 
 
     # make target dir the lower dir
     mv    "$TargetPath" "$LowerPath"
     
-    # create new target dir as mountpoint
+    # recreate target-dir as mountpoint
     mkdir "$TargetPath"
   else
     # unmount target dir
     umount "$TargetPath"
-    
-    # create work2 dir
-    mkdir "$WorkPath"2
 
     # create upper2 dir
     mkdir "$UpperPath"2
@@ -268,7 +260,7 @@ ls_restore() {
       LowestPath="$f"
     else
       # merge upper layers into remembered lowest it
-      mergeLayersByPath "$f/" "$LowestPath"
+      merge_layers_by_path "$f/" "$LowestPath"
     fi
     
     # check if target-layer reached
@@ -313,7 +305,7 @@ ls_merge() {
   fi
   
   # find toLayer-path
-  setToLayerPath
+  set_to_layer_path
   
   # initialize iterator
   i=1
@@ -325,7 +317,7 @@ ls_merge() {
     if [ "$i" -ge "$fromLayerID" ] && [ "$i" -lt "$toLayerID" ]
     then
       # merge
-      mergeLayersByPath $f $toLayerPath
+      merge_layers_by_path $f $toLayerPath
     elif [ "$i" -ge "$toLayerID" ]
     then
       # break if last layer reached
@@ -350,7 +342,7 @@ ls_merge() {
 #############
 
 
-mode1First() {
+is_first_snapshot() {
   if [ ! -d $(echo "$UpperPath"2) ]
   then
     return 1
@@ -361,7 +353,7 @@ mode1First() {
 
 
 # choose layersnap mode fitting the host-system
-setMode() {
+set_mode() {
   # try to check by ubuntu-version first, then by kernel-version
   if [ "$(cat /etc/issue | grep -c Ubuntu)" -gt "0" ]
   then
@@ -391,7 +383,7 @@ setMode() {
 }
 
 # get human readable total size of directory
-sizeOfDir() { # (pathname)
+size_of_dir() { # (pathname)
   # get dirname
   location=$(dirname $(realpath $1))
   
@@ -424,7 +416,7 @@ pluralize() { # (word, count)
 }
 
 # compose status line of layer
-layerStatusLine() { # (count, path)
+layer_status_line() { # (count, path)
   if [ "$3" != "upper" ]
   then
     # lower layers
@@ -434,11 +426,11 @@ layerStatusLine() { # (count, path)
     LayerDate=$(printf "%${#LayerDate}s" "now")
   fi
   LayerFileCount=$(find $2 -type f | wc -l)
-  echo "layer $(printf "%${#LayerCount}d" $1) from $LayerDate with $(sizeOfDir "$2") in $(pluralize "file" $LayerFileCount)"
+  echo "layer $(printf "%${#LayerCount}d" $1) from $LayerDate with $(size_of_dir "$2") in $(pluralize "file" $LayerFileCount)"
 }
 
 # set all the variables needed for working with a layer-pool
-setPoolVars() {
+set_pool_vars() {
   # check if pool is mounted
   if mount | grep $TargetPath > /dev/null
   then
@@ -480,7 +472,7 @@ setPoolVars() {
 }
 
 # used by --merge
-setToLayerPath() {
+set_to_layer_path() {
   i=1
   for f in "$PoolPath/lower-"*
   do
@@ -494,7 +486,7 @@ setToLayerPath() {
 }
 
 # sets LowerList-variable 
-setLowerList() { # (from-ID, to-ID)
+set_lower_list() { # (from-ID, to-ID)
   # check if params are set and are integers
   if [[ "$1" =~ "^[0-9]+$" ]] && [[ "$1" =~ "^[0-9]+$" ]]
   then
@@ -531,7 +523,7 @@ setLowerList() { # (from-ID, to-ID)
 }
 
 # merges one directory into another, overwriting existing files 
-mergeLayersByPath() { # (fromLayerPath, toLayerPath)
+merge_layers_by_path() { # (fromLayerPath, toLayerPath)
   echo "merging $1 into $2"
   rsync --remove-source-files "$1/"* "$2"
   # find "$1/"* -type d -empty -delete
@@ -541,7 +533,7 @@ mergeLayersByPath() { # (fromLayerPath, toLayerPath)
 }
 
 # parse request params
-parseRequest() { # ($*)
+parse_request() { # ($*)
   ACTION="status"
   while [[ $# -gt 1 ]]
   do
@@ -591,7 +583,6 @@ parseRequest() { # ($*)
 
 # call bootstrapper and pass request params
 ls_bootstrap $*
-
 
 
 
