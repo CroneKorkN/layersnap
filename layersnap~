@@ -92,7 +92,7 @@ ls_bootstrap() { # (request)
 #
 
 ls_status() {
-  set_pool_vars
+
 
   # ensure target is mounted
   ls_mount
@@ -171,6 +171,9 @@ ls_snapshot() {
       ls_snapshot_unlimited
     ;;
   esac
+  
+  # feedback
+  echo "NOTICE: layersnap created new snapshot $LayerName."
   
   # mount it
   ls_mount
@@ -393,10 +396,8 @@ set_mode() {
   else
     echo "ABORTING: Sorry, but your System is not capable of running layersnap."
     echo "Layersnap depends on overlayfs, which was included in kernel 3.18 and extended by support of multiple lower-layers in 4.0. Besides that, Ubuntu supports overlayfs partly since at least 12.04 and fully since at least 14.04"
-    exit
+    exit 1
   fi
-  
-  echo mode $LSMode # debug
 }
 
 # get human readable total size of directory
@@ -460,10 +461,10 @@ is_pool_mounted() {
 # set all the variables needed for working with a layer-pool
 set_pool_vars() {
   # date in format suitable for use in pathname
-  Now=$(date "$DateFormat")
+  LayerName=$(date "$DateFormat")
   
   # whole path with date
-  LowerPath="$PoolPath/lower-$Now"
+  LowerPath="$PoolPath/lower-$LayerName"
   
   # path to upper dirs
   UpperPath="$PoolPath/upper"

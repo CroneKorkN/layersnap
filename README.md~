@@ -5,23 +5,23 @@ overlayfs- and rsync-based simple snapshots
 
 # UI
 
-`layersnap [-s|--snapshot|-m|--merge|-r|--restore] <target-directory>`
+`layersnap [s|snapshot|m|merge|r|restore] <target-directory>`
 
 ## without additional parameters
 
 * show status of target-directory and mounts it if neccessary
 
-## -s (or --snapshot) \<target-directory\>
+## s (or snapshot) \<target-directory\>
 
 * create snapshot of target-directory
 
-## -r (or --restore) \<target-directory\>
+## r (or restore) \<target-directory\>
 
 * shows a list of snapshot-layers
 * asks interactively for snapshot to restore
 * restores given snapshot and deletes all layersnap-stuff related to target-directory
 
-## -m (or --merge) \<target-directory\>
+## m (or merge) \<target-directory\>
 
 * merges range of layers to restore performance
 * asks interactively for starting-layer and target-layer
