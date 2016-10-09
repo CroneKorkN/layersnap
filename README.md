@@ -31,7 +31,7 @@ overlayfs- and rsync-based simple snapshots
 
 layersnap has two operational modes.
 
-## mode1
+## legacy-mode
 
 compatible with
 * Linux kernel 3.18 and newer
@@ -41,7 +41,7 @@ compatible with
 Older overlayfs implemantations accepted only one lower-dir. But two overlayfs' can be stacked either and so does layersnap. Thus, snapshots are limited to two.
 
 
-## mode2
+## multi-mode
 
 compatible with
 * Linux kernel 4.0 and newer

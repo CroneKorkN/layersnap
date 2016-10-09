@@ -23,7 +23,6 @@
 # - $((2 ** 4))
 
 
-
 ##############
 ##############
 ##          ##
@@ -43,14 +42,6 @@ ls_bootstrap() { # (request)
   
   # set mode depending on host-system
   set_mode
-  
-  # exit if layersnap is not supported
-  if [ "$LSMode" == "0" ]
-  then
-    echo "ABORTING: Sorry, but your System is not capable of running layersnap."
-    echo "Layersnap depends on overlayfs, which was included in kernel 3.18 and extended by support of multiple lower-layers in 4.0. Besides that, Ubuntu supports overlayfs partly since at least 12.04 and fully since at least 14.04"
-    exit
-  fi 
 
   # basic paths and vars
   TargetName="$(basename $TargetPath)"
@@ -102,16 +93,12 @@ ls_bootstrap() { # (request)
 
 ls_status() {
   set_pool_vars
-  
+
   # ensure target is mounted
-  if [ ! "$PoolMounted" == "true" ]
-  then
-    ls_mount
-    echo "layers have just been mounted."
-  fi
-  
+  ls_mount
+    
   # display summerizing information
-  echo "LAYERSNAP: $TargetPath consists of $(expr $LayerCount + 1) layers. $(pluralize "layer" $LayersAvailable) available."
+  echo "$TargetPath uses $(expr $LayerCount + 1) layers. $(pluralize "layer" $LayersAvailable) available."
   
   # show detailed inforamtion for each layer
   i=1
@@ -130,21 +117,30 @@ ls_status() {
 #
 
 ls_mount() {
+  if is_pool_mounted
+  then
+    return 1
+  fi
+  
   # select mode
   case $LSMode in
-    1)
-      if mode1First
+
+    legacy)
+      if is_first_snapshot
+      then
         mount -t overlayfs -o rw,lowerdir="$LowerList",upperdir="$UpperPath" overlayfs "$TargetPath"
       else
         mount -t overlayfs -o rw,lowerdir="$LowerList",upperdir="$UpperPath" overlayfs "$MergePath"
-        mount -t overlayfs -o rw,lowerdir="$MergePath",upperdir="$UpperPath"2 overlayfs "$TargetPath"
+        mount -t overlayfs -o rw,lowerdir="$MergePath",upperdir="$Upper2Path" overlayfs "$TargetPath"
       fi
     ;;
-    2)
-      mount -t overlay overlay -o rw,lowerdir="$LowerList",upperdir="$UpperPath",workdir="$WorkPath" "$TargetPath"
+    
+    unlimited)
       mount -t overlay overlay -o rw,lowerdir="$LowerList",upperdir="$UpperPath",workdir="$WorkPath" "$TargetPath"
     ;;
   esac
+
+  echo "layers have just been mounted."
 }
 
 #
@@ -161,11 +157,11 @@ ls_snapshot() {
 
   # select mode
   case $LSMode in
-    1)
-      ls_snapshot_mode1
+    legacy)
+      ls_snapshot_legacy
     ;;
-    2)
-      ls_snapshot_mode2
+    unlimited)
+      ls_snapshot_unlimited
     ;;
   esac
   
@@ -174,9 +170,9 @@ ls_snapshot() {
 }
 
  # two-layer-mode
-ls_snapshot_mode1() {
+ls_snapshot_legacy() {
   # check 
-  if mode1First
+  if is_first_snapshot
   then
     # create pool-, work-, upper-dir
     mkdir -p "$PoolPath" "$UpperPath" 
@@ -191,14 +187,14 @@ ls_snapshot_mode1() {
     umount "$TargetPath"
 
     # create upper2 dir
-    mkdir "$UpperPath"2
+    mkdir "$Upper2Path"
   fi
 }
 
 # unlimited mode
-ls_snapshot_mode2() {
+ls_snapshot_unlimited() {
   # initial or consecutive snapshot?
-  if [ ! -d "$PoolPath" ]
+  if is_first_snapshot
   then
     # create pool dir
     mkdir -p "$PoolPath"
@@ -237,13 +233,13 @@ ls_restore() {
   ls_status
   
   # get user input, which snapshot to restore
-  read -p "Snapshot ID to restore: " toLayerID
+  read -p "Snapshot ID to restore: " destinationLayerID
   
   # confirm
   read -p "Enter 'restore' to confirm: " confirmation
   if [ ! "$confirmation" == "restore" ]; then
     echo "aborting."
-    return 2
+    exit 1
   fi
   
   # unmount and remove target
@@ -264,7 +260,7 @@ ls_restore() {
     fi
     
     # check if target-layer reached
-    if [ "$i" == "$toLayerID" ]
+    if [ "$i" == "$destinationLayerID" ]
     then
       # stop merging
       break
@@ -294,18 +290,18 @@ ls_merge() {
 
   # get user input, which layers to merge
   read -p "Merge layers starting from: " fromLayerID
-  read -p "Merge layers ending with: " toLayerID
+  read -p "Merge layers ending with: " destinationLayerID
   
   # confirm
-  echo "All layers between and including layers $fromLayerID and $toLayerID will be merged into layer $toLayerID."
+  echo "All layers between and including layers $fromLayerID and $destinationLayerID will be merged into layer $destinationLayerID."
   read -p "Enter 'merge' to confirm: " confirmation
   if [ ! "$confirmation" == "merge" ]; then
     echo "aborting."
     return 2
   fi
   
-  # find toLayer-path
-  set_to_layer_path
+  # find destinationLayer-path
+  set_destination_layer_path
   
   # initialize iterator
   i=1
@@ -314,11 +310,11 @@ ls_merge() {
   for f in "$PoolPath/lower-"*
   do
     # check if layer is affected
-    if [ "$i" -ge "$fromLayerID" ] && [ "$i" -lt "$toLayerID" ]
+    if [ "$i" -ge "$fromLayerID" ] && [ "$i" -lt "$destinationLayerID" ]
     then
       # merge
-      merge_layers_by_path $f $toLayerPath
-    elif [ "$i" -ge "$toLayerID" ]
+      merge_layers_by_path $f $destinationLayerPath
+    elif [ "$i" -ge "$destinationLayerID" ]
     then
       # break if last layer reached
       break
@@ -342,15 +338,25 @@ ls_merge() {
 #############
 
 
+# if upper2-dir doesnt exist, you're doing the first snapshot 
 is_first_snapshot() {
-  if [ ! -d $(echo "$UpperPath"2) ]
+  if [ ! -d "$PoolPath" ]
   then
-    return 1
+    return 0 # true, first
   else
-    return 2
+    return 1 # fasle, consecutive
   fi
 }
 
+# is second and last legacy-mode snapshot; in unlimited mode, there ist never a last snapshot
+is_last_snapshot() {
+  if [ -d "$PoolPath" ]  && [ ! -d "$Upper2Path" ]
+  then
+    return 0 # true, last
+  else
+    return 1 # fasle, other
+  fi
+}
 
 # choose layersnap mode fitting the host-system
 set_mode() {
@@ -367,19 +373,23 @@ set_mode() {
   # set layersnap-mode
   if [ "$ubuntuMainVersion" -ge "14" ] && [ "$ubuntuSubVersion" -ge "04" ]
   then
-    LSMode="2"
+    LSMode="unlimited"
   elif   [ "$ubuntuMainVersion" -ge "12" ] && [ "$ubuntuSubVersion" -ge "04" ]
   then
-    LSMode="1"
+    LSMode="legacy"
   elif [ "$kernelMainVersion" == "4" ]
   then
-    LSMode="2"
+    LSMode="unlimited"
   elif [ "$kernelMainVersion" == "3" ]   && [ "$kernelSubVersion" -ge "18" ]
   then
-    LSMode="1"
+    LSMode="legacy"
   else
-    LSMode="0"
+    echo "ABORTING: Sorry, but your System is not capable of running layersnap."
+    echo "Layersnap depends on overlayfs, which was included in kernel 3.18 and extended by support of multiple lower-layers in 4.0. Besides that, Ubuntu supports overlayfs partly since at least 12.04 and fully since at least 14.04"
+    exit
   fi
+  
+  echo mode $LSMode # debug
 }
 
 # get human readable total size of directory
@@ -429,24 +439,28 @@ layer_status_line() { # (count, path)
   echo "layer $(printf "%${#LayerCount}d" $1) from $LayerDate with $(size_of_dir "$2") in $(pluralize "file" $LayerFileCount)"
 }
 
-# set all the variables needed for working with a layer-pool
-set_pool_vars() {
-  # check if pool is mounted
+# check if pool is mounted
+is_pool_mounted() {
+  echo 
   if mount | grep $TargetPath > /dev/null
   then
-    PoolMounted="true"
+    return 0 # true
   else
-    PoolMounted="false"
+    return 1 # false
   fi
+}
 
+# set all the variables needed for working with a layer-pool
+set_pool_vars() {
   # date in format suitable for use in pathname
   Now=$(date "$DateFormat")
   
   # whole path with date
   LowerPath="$PoolPath/lower-$Now"
   
-  # path to upper dir
+  # path to upper dirs
   UpperPath="$PoolPath/upper"
+  Upper2Path="$PoolPath/upper2"
   
   # path to work dir
   WorkPath="$PoolPath/work"
@@ -462,23 +476,38 @@ set_pool_vars() {
   done
   LowerList=${LowerList::-1}
   
-  # calculate number of still available layers
-  if [ "$LSMode" == "2" ]
+  set_layers_available
+}
+
+# calculate number of still available layers
+set_layers_available() {
+  if [ "$LSMode" == "unlimited" ]
   then
     LayersAvailable="Unlimited"
-  else
-    LayersAvailable=$(expr "$LSMode" - "$LayerCount")
+  elif [ "$LSMode" == "legacy" ]
+  then
+    if is_first_snapshot
+    then
+      LayersAvailable="2"
+    else
+      if is_last_snapshot
+      then
+        LayersAvailable="1"
+      else
+        LayersAvailable="0"
+      fi
+    fi
   fi
 }
 
 # used by --merge
-set_to_layer_path() {
+set_destination_layer_path() {
   i=1
   for f in "$PoolPath/lower-"*
   do
-    if [ "$i" == "$toLayerID" ]
+    if [ "$i" == "$destinationLayerID" ]
     then
-      toLayerPath="$f"
+      destinationLayerPath="$f"
       break
     fi
     i=$(expr $i + 1)
@@ -523,7 +552,7 @@ set_lower_list() { # (from-ID, to-ID)
 }
 
 # merges one directory into another, overwriting existing files 
-merge_layers_by_path() { # (fromLayerPath, toLayerPath)
+merge_layers_by_path() { # (fromLayerPath, destinationLayerPath)
   echo "merging $1 into $2"
   rsync --remove-source-files "$1/"* "$2"
   # find "$1/"* -type d -empty -delete
@@ -539,23 +568,28 @@ parse_request() { # ($*)
   do
     key="$1"
     case $key in
-      -s|--snapshot)
+      s|snapshot)
         ACTION="snapshot"
         shift
       ;;
 
-      -c|--checkout)
+      c|checkout)
         ACTION="checkout"
         shift
       ;;
 
-      -r|--restore)
+      r|restore)
         ACTION="restore"
         shift
       ;;
 
-      -m|--merge)
+      m|merge)
         ACTION="merge"
+        shift
+      ;;
+      
+      status)
+        ACTION="status"
         shift
       ;;
     esac
@@ -579,7 +613,6 @@ parse_request() { # ($*)
 ##           ##
 ###############
 ###############
-
 
 # call bootstrapper and pass request params
 ls_bootstrap $*
