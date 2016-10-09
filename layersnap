@@ -154,6 +154,13 @@ ls_mount() {
 
 ls_snapshot() {
   set_pool_vars
+  
+  # making an empty snapshot is nonsensual
+  if [ ! "$(ls -A $UpperPath)" ]
+  then
+    echo "WARNING: layersnap rejected making an empty snapshot."
+    exit 1
+  fi
 
   # select mode
   case $LSMode in
