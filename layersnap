@@ -21,6 +21,7 @@
 # todo:
 # - ubuntu 12.04 syntax
 # - $((2 ** 4))
+# - ubuntu 12.04 needs 'sudo apt-get install realpath'
 
 
 ##############
@@ -48,14 +49,7 @@ ls_bootstrap() { # (request)
   PoolPath="$(dirname $TargetPath)/.layersnap/$TargetName"
   DateFormat="+%s"
   DisplayDateFormat="+%d.%m.%Y %H:%M:%S"
-  
-  # exit with message if target is not layersnapped
-  if [ ! -d "$PoolPath" ]
-  then
-    echo ABORTING: $TargetPath is not layersnapped, so nothing to $ACTION!
-    exit
-  fi
-  
+
   # jeahjeahjeah
   case $ACTION in
 
@@ -68,10 +62,12 @@ ls_bootstrap() { # (request)
     ;;
     
     merge)
+      exit_unless_layersnapped
       ls_merge
     ;;
     
     restore)
+      exit_unless_layersnapped
       ls_restore
     ;;
   esac
@@ -92,7 +88,12 @@ ls_bootstrap() { # (request)
 #
 
 ls_status() {
-
+  # exit if not layeranapped
+  if ! is_layersnapped
+  then
+    echo "NOTICE: $TargetPath is not loayersnapped."
+    exit 0
+  fi
 
   # ensure target is mounted
   ls_mount
@@ -117,7 +118,14 @@ ls_status() {
 #
 
 ls_mount() {
+  # return if already mounted
   if is_pool_mounted
+  then
+    return 1
+  fi
+
+  # return if nothing to mount
+  if ! is_layersnapped
   then
     return 1
   fi
@@ -128,9 +136,14 @@ ls_mount() {
     legacy)
       if is_first_snapshot
       then
-        mount -t overlayfs -o rw,lowerdir="$LowerList",upperdir="$UpperPath" overlayfs "$TargetPath"
+        echo "mount first legacy"
+        echo mount -t overlayfs -o rw,lowerdir="$LowerPath",upperdir="$UpperPath" overlayfs "$TargetPath"
+        mount -t overlayfs -o rw,lowerdir="$LowerPath",upperdir="$UpperPath" overlayfs "$TargetPath"
       else
-        mount -t overlayfs -o rw,lowerdir="$LowerList",upperdir="$UpperPath" overlayfs "$MergePath"
+        echo "mount second legacy"
+        echo mount -t overlayfs -o rw,lowerdir="$LowerPath",upperdir="$UpperPath" overlayfs "$MergePath"
+        mount -t overlayfs -o rw,lowerdir="$LowerPath",upperdir="$UpperPath" overlayfs "$MergePath"
+        echo mount -t overlayfs -o rw,lowerdir="$MergePath",upperdir="$Upper2Path" overlayfs "$TargetPath"
         mount -t overlayfs -o rw,lowerdir="$MergePath",upperdir="$Upper2Path" overlayfs "$TargetPath"
       fi
     ;;
@@ -155,13 +168,6 @@ ls_mount() {
 ls_snapshot() {
   set_pool_vars
   
-  # making an empty snapshot is nonsensual
-  if [ ! "$(ls -A $UpperPath)" ]
-  then
-    echo "WARNING: layersnap rejected making an empty snapshot."
-    exit 1
-  fi
-
   # select mode
   case $LSMode in
     legacy)
@@ -175,34 +181,50 @@ ls_snapshot() {
   # feedback
   echo "NOTICE: layersnap created new snapshot $LayerName."
   
+  echo "ls_mount"
   # mount it
   ls_mount
 }
 
- # two-layer-mode
+# two-layer-mode
 ls_snapshot_legacy() {
+  if [ -d "$Upper2Path" ]
+  then
+    echo "ERROR: no more layers available"
+    exit 1
+  fi
+
   # check 
   if is_first_snapshot
   then
+    echo "first legacy snapshot"
     # create pool-, work-, upper-dir
     mkdir -p "$PoolPath" "$UpperPath" 
 
     # make target dir the lower dir
-    mv    "$TargetPath" "$LowerPath"
+    mv     "$TargetPath" "$LowerPath"
     
     # recreate target-dir as mountpoint
-    mkdir "$TargetPath"
+    mkdir  "$TargetPath"
   else
+    echo "second legacy snapshot"
     # unmount target dir
     umount "$TargetPath"
 
-    # create upper2 dir
-    mkdir "$Upper2Path"
+    # create dirs
+    mkdir  "$Upper2Path" "$MergePath"
   fi
 }
 
 # unlimited mode
 ls_snapshot_unlimited() {
+  # making an empty snapshot is nonsensual
+  if [ ! "$(ls -A $UpperPath)" ]
+  then
+    echo "WARNING: layersnap rejected making an empty snapshot."
+    exit 1
+  fi
+
   # initial or consecutive snapshot?
   if is_first_snapshot
   then
@@ -347,15 +369,48 @@ ls_merge() {
 #############
 #############
 
-
-# if upper2-dir doesnt exist, you're doing the first snapshot 
-is_first_snapshot() {
-  if [ ! -d "$PoolPath" ]
+# check if target is layersnapped
+is_layersnapped() {
+  if [ -d "$PoolPath" ]
   then
-    return 0 # true, first
+    return 0
   else
-    return 1 # fasle, consecutive
+    return 1
   fi
+}
+
+# check if target is layersnapped (snapshots existing)
+exit_unless_layersnapped() {
+  if ! is_layersnapped
+  then
+    echo "ERROR: $Action not possible on $TagetPath. No snapshots found."
+    exit 1
+  fi
+}
+
+# if pool-dir doesnt exist, you're doing the first snapshot 
+is_first_snapshot() {
+  # cache result, so it doesnt change while snapshot progresses
+  if [ -z $isFirstSnapshot ] # check if variable has string-length greater then zero
+  then
+    if [ ! -d "$PoolPath" ]
+    then
+      isFirstSnapshot=true
+    else
+      isFirstSnapshot=false
+    fi
+  fi
+
+  # decide via cache
+  if [ "$isFirstSnapshot" == "true" ]
+  then
+    return 0 # true
+  elif [ "$isFirstSnapshot" == "false" ]
+  then
+    return 1 # false
+  fi
+
+  echo ERRRORRRR
 }
 
 # is second and last legacy-mode snapshot; in unlimited mode, there ist never a last snapshot
@@ -463,12 +518,8 @@ set_pool_vars() {
   # date in format suitable for use in pathname
   LayerName=$(date "$DateFormat")
   
-  # whole path with date
-  LowerPath="$PoolPath/lower-$LayerName"
-  
-  # path to upper dirs
+  # path to upper dir
   UpperPath="$PoolPath/upper"
-  Upper2Path="$PoolPath/upper2"
   
   # path to work dir
   WorkPath="$PoolPath/work"
@@ -476,14 +527,30 @@ set_pool_vars() {
   # total lower-layer-count
   LayerCount=$(find "$PoolPath" -name lower-* | wc -l)
 
-  # ":"-seperated list of layer-paths
-  LowerList=""
-  for f in "$PoolPath/lower-"*
-  do
-    LowerList="$(realpath "$f"):$LowerList"
-  done
-  LowerList=${LowerList::-1}
-  
+  if [ "$LSMode" == "unlimited" ]
+  then 
+    # whole path with date
+    LowerPath="$PoolPath/lower-$LayerName"
+
+    # ":"-seperated list of layer-paths
+    LowerList=""
+    for f in "$PoolPath/lower-"*
+    do
+      LowerList="$(realpath "$f"):$LowerList"
+    done
+    LowerList=${LowerList::-1}
+  elif [ "$LSMode" == "legacy" ]
+  then
+    # whole path with date
+    LowerPath="$PoolPath/lower"
+
+    # marge path
+    MergePath="$PoolPath/merge"
+
+    # path to upper2 dir
+    Upper2Path="$PoolPath/upper2"
+  fi
+
   set_layers_available
 }
 
