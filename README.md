@@ -25,7 +25,8 @@ overlayfs- and rsync-based simple snapshots
 
 * merges range of layers to restore performance
 * asks interactively for starting-layer and target-layer
-* merges layers and remounts 
+* merges layers and remounts
+* not supported in legacy-mode
 
 # compatibility
 
