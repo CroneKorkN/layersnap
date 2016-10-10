@@ -22,6 +22,7 @@
 # - ubuntu 12.04 syntax
 # - $((2 ** 4))
 # - ubuntu 12.04 needs 'sudo apt-get install realpath'
+# - legacy-mode: check both mount-points seperately
 
 
 ##############
@@ -62,12 +63,10 @@ ls_bootstrap() { # (request)
     ;;
     
     merge)
-      exit_unless_layersnapped
       ls_merge
     ;;
     
     restore)
-      exit_unless_layersnapped
       ls_restore
     ;;
   esac
@@ -88,29 +87,39 @@ ls_bootstrap() { # (request)
 #
 
 ls_status() {
-  # exit if not layeranapped
-  if ! is_layersnapped
-  then
-    echo "NOTICE: $TargetPath is not loayersnapped."
-    exit 0
-  fi
+  exit_unless_layersnapped
+
+  # set or refesh pool vars
+  set_pool_vars
 
   # ensure target is mounted
   ls_mount
     
   # display summerizing information
-  echo "$TargetPath uses $(expr $LayerCount + 1) layers. $(pluralize "layer" $LayersAvailable) available."
+  echo "$TargetPath uses $LayerCount layers. $(pluralize "layer" $LayersAvailable) available."
   
-  # show detailed inforamtion for each layer
-  i=1
-  for f in "$PoolPath/lower-"*
-  do
-    layer_status_line $i $f
-    i=$(expr $i + 1)
-  done
-  
-  # show final status line for upper directory
-  layer_status_line $(expr $LayerCount + 1) $UpperPath upper
+  if [ "$LSMode" == "unlimited" ]; then
+    # show detailed inforamtion for each layer
+    i=1
+    for f in "$PoolPath/lower-"*
+    do
+      layer_status_line $i $f
+      i=$(expr $i + 1)
+    done
+
+    # show final status line for upper directory
+    layer_status_line $LayerCount $UpperPath upper
+  elif [ "$LSMode" == "legacy" ]; then
+    if [ -d "$PoolPath" ]; then
+      layer_status_line 1 "$Lower1Path"
+      if [ ! -d "$Upper2Path" ]; then
+        layer_status_line 2 "$UpperPath" upper
+      else
+        layer_status_line 2 "$Lower2Path"
+        layer_status_line 3 "$Upper2Path" upper
+      fi
+    fi
+  fi
 }
 
 #
@@ -119,32 +128,27 @@ ls_status() {
 
 ls_mount() {
   # return if already mounted
-  if is_pool_mounted
-  then
+  if is_pool_mounted; then
     return 1
   fi
 
   # return if nothing to mount
-  if ! is_layersnapped
-  then
+  if ! is_layersnapped; then
     return 1
   fi
   
+  # set or refesh pool vars
+  set_pool_vars
+  
   # select mode
   case $LSMode in
-
     legacy)
-      if is_first_snapshot
-      then
-        echo "mount first legacy"
-        echo mount -t overlayfs -o rw,lowerdir="$LowerPath",upperdir="$UpperPath" overlayfs "$TargetPath"
-        mount -t overlayfs -o rw,lowerdir="$LowerPath",upperdir="$UpperPath" overlayfs "$TargetPath"
-      else
-        echo "mount second legacy"
-        echo mount -t overlayfs -o rw,lowerdir="$LowerPath",upperdir="$UpperPath" overlayfs "$MergePath"
-        mount -t overlayfs -o rw,lowerdir="$LowerPath",upperdir="$UpperPath" overlayfs "$MergePath"
-        echo mount -t overlayfs -o rw,lowerdir="$MergePath",upperdir="$Upper2Path" overlayfs "$TargetPath"
-        mount -t overlayfs -o rw,lowerdir="$MergePath",upperdir="$Upper2Path" overlayfs "$TargetPath"
+      if [ "$LayerCount" -ge "3" ]; then
+        debug mount -t overlayfs -o rw,lowerdir="$Lower1Path",upperdir="$UpperPath" overlayfs "$Lower2Path"
+        sleep 1
+        debug mount -t overlayfs -o rw,lowerdir="$Lower2Path",upperdir="$Upper2Path" overlayfs "$TargetPath"
+      elif [ "$LayerCount" -ge "2" ]; then
+        debug mount -t overlayfs -o rw,lowerdir="$NewLowerPath",upperdir="$UpperPath" overlayfs "$TargetPath"
       fi
     ;;
     
@@ -181,53 +185,48 @@ ls_snapshot() {
   # feedback
   echo "NOTICE: layersnap created new snapshot $LayerName."
   
-  echo "ls_mount"
   # mount it
   ls_mount
 }
 
 # two-layer-mode
 ls_snapshot_legacy() {
-  if [ -d "$Upper2Path"]
-  then
+  if [ -d "$Upper2Path" ]; then
     echo "ERROR: no more layers available"
     exit 1
   fi
 
   # check 
-  if is_first_snapshot
-  then
-    echo "first legacy snapshot"
-    # create pool-, work-, upper-dir
+  if is_first_snapshot; then
+    debug echo "first legacy snapshot"
+    # create pool- and upper-dir
     mkdir -p "$PoolPath" "$UpperPath" 
 
-    # make target dir the lower dir
-    mv     "$TargetPath" "$LowerPath"
+    # make target dir the new lower dir
+    mv     "$TargetPath" "$NewLowerPath"
     
     # recreate target-dir as mountpoint
     mkdir  "$TargetPath"
   else
-    echo "second legacy snapshot"
+    debug echo "second legacy snapshot"
     # unmount target dir
     umount "$TargetPath"
 
     # create dirs
-    mkdir  "$Upper2Path" "$MergePath"
+    mkdir  "$Upper2Path" "$NewLowerPath"
   fi
 }
 
 # unlimited mode
 ls_snapshot_unlimited() {
   # making an empty snapshot is nonsensual
-  if [ ! "$(ls -A $UpperPath)" ]
-  then
+  if [ ! "$(ls -A $UpperPath)" ]; then
     echo "WARNING: layersnap rejected making an empty snapshot."
     exit 1
   fi
 
   # initial or consecutive snapshot?
-  if is_first_snapshot
-  then
+  if is_first_snapshot; then
     # create pool dir
     mkdir -p "$PoolPath"
     
@@ -235,7 +234,7 @@ ls_snapshot_unlimited() {
     mkdir "$WorkPath"
     
     # make target dir the mew lower dir
-    mv    "$TargetPath" "$LowerPath"
+    mv    "$TargetPath" "$NewLowerPath"
     
     # create new target dir as mountpoint
     mkdir "$TargetPath"
@@ -244,7 +243,7 @@ ls_snapshot_unlimited() {
     umount "$TargetPath"
     
     # make target dir the mew lower dir
-    mv    "$UpperPath" "$LowerPath"
+    mv    "$UpperPath" "$NewLowerPath"
   fi
 
   # create upper dir anyway
@@ -261,8 +260,12 @@ ls_snapshot_unlimited() {
 #
 
 ls_restore() {
+  exit_unless_layersnapped
+
   # show status screen first
   ls_status
+  
+  set_pool_vars
   
   # get user input, which snapshot to restore
   read -p "Snapshot ID to restore: " destinationLayerID
@@ -278,32 +281,55 @@ ls_restore() {
   umount "$TargetPath"
   rmdir  "$TargetPath"
   
-  # initialize iterator
-  i=1
+  # UNLIMITED
+  if [ "$LSMode" == "unlimited" ]; then
+    # initialize iterator
+    i=1
+    
+    # iterate through lower-dirs
+    for f in "$PoolPath/lower-"*; do
+      if [ "$i" == 1 ]; then
+        # remember lowest layer
+        LowestPath="$f"
+      else
+        # merge upper layers into remembered lowest it
+        merge_layers_by_path "$f/" "$LowestPath"
+      fi
+      
+      # check if target-layer reached
+      if [ "$i" == "$destinationLayerID" ]; then
+        # stop merging
+        break
+      fi
+      
+      # increase iterator
+      i=$(expr $i + 1)
+    done
+    
+    # make merged dir the target dir
+    mv "$LowestPath" "$TargetPath"  
   
-  # iterate through lower-dirs
-  for f in "$PoolPath/lower-"*; do
-    if [ "$i" == 1 ]; then
-      # remember lowest layer
-      LowestPath="$f"
-    else
-      # merge upper layers into remembered lowest it
-      merge_layers_by_path "$f/" "$LowestPath"
+  # LEGACY 
+  elif [ "$LSMode" == "legacy" ]; then
+    # umount lower2 if neccessary
+    if [ "$LayerCount" == "3" ]; then
+      umount "$Lower2Path"
     fi
     
-    # check if target-layer reached
-    if [ "$i" == "$destinationLayerID" ]
-    then
-      # stop merging
-      break
+    # keep third layer changes?
+    if [ "$destinationLayerID" -ge "3" ]; then
+      merge_layers_by_path "$Upper2Path" "$Lower1Path"
     fi
     
-    # increase iterator
-    i=$(expr $i + 1)
-  done
+    # keep second layer changes?
+    if [ "$destinationLayerID" -ge "3" ]; then
+      merge_layers_by_path "$UpperPath" "$Lower1Path"
+    fi
+    
+    # keep base layer anyway
+    mv "$Lower1Path" "$TargetPath"
+  fi
   
-  # make merged dir the target dir
-  mv "$LowestPath" "$TargetPath"
 
   # remove leftovers
   rm -R "$PoolPath"
@@ -317,6 +343,8 @@ ls_restore() {
 #
 
 ls_merge() {
+  exit_unless_layersnapped
+
   # show status screen first
   ls_status
 
@@ -342,12 +370,10 @@ ls_merge() {
   for f in "$PoolPath/lower-"*
   do
     # check if layer is affected
-    if [ "$i" -ge "$fromLayerID" ] && [ "$i" -lt "$destinationLayerID" ]
-    then
+    if [ "$i" -ge "$fromLayerID" ] && [ "$i" -lt "$destinationLayerID" ]; then
       # merge
       merge_layers_by_path $f $destinationLayerPath
-    elif [ "$i" -ge "$destinationLayerID" ]
-    then
+    elif [ "$i" -ge "$destinationLayerID" ]; then
       # break if last layer reached
       break
     fi
@@ -371,8 +397,7 @@ ls_merge() {
 
 # check if target is layersnapped
 is_layersnapped() {
-  if [ -d "$PoolPath" ]
-  then
+  if [ -d "$PoolPath" ]; then
     return 0
   else
     return 1
@@ -381,53 +406,16 @@ is_layersnapped() {
 
 # check if target is layersnapped (snapshots existing)
 exit_unless_layersnapped() {
-  if ! is_layersnapped
-  then
-    echo "ERROR: $Action not possible on $TagetPath. No snapshots found."
+  if [ ! -d "$PoolPath" ]; then
+    echo "ERROR: $ACTION not possible: $TargetPath is not layersnapped."
     exit 1
-  fi
-}
-
-# if pool-dir doesnt exist, you're doing the first snapshot 
-is_first_snapshot() {
-  # cache result, so it doesnt change while snapshot progresses
-  if [ -z $isFirstSnapshot ] # check if variable has string-length greater then zero
-  then
-    if [ ! -d "$PoolPath" ]
-    then
-      isFirstSnapshot=true
-    else
-      isFirstSnapshot=false
-    fi
-  fi
-
-  # decide via cache
-  if [ "$isFirstSnapshot" == "true" ]
-  then
-    return 0 # true
-  elif [ "$isFirstSnapshot" == "false" ]
-  then
-    return 1 # false
-  fi
-
-  echo ERRRORRRR
-}
-
-# is second and last legacy-mode snapshot; in unlimited mode, there ist never a last snapshot
-is_last_snapshot() {
-  if [ -d "$PoolPath" ]  && [ ! -d "$Upper2Path" ]
-  then
-    return 0 # true, last
-  else
-    return 1 # fasle, other
   fi
 }
 
 # choose layersnap mode fitting the host-system
 set_mode() {
   # try to check by ubuntu-version first, then by kernel-version
-  if [ "$(cat /etc/issue | grep -c Ubuntu)" -gt "0" ]
-  then
+  if [ "$(cat /etc/issue | grep -c Ubuntu)" -gt "0" ]; then
     ubuntuMainVersion=$(cat /etc/lsb-release | grep DISTRIB_RELEASE | cut -c 17- | cut -d "." -f1)
     ubuntuSubVersion=$(cat /etc/lsb-release | grep DISTRIB_RELEASE | cut -c 17- | cut -d "." -f2)
   else
@@ -436,17 +424,13 @@ set_mode() {
   fi
   
   # set layersnap-mode
-  if [ "$ubuntuMainVersion" -ge "14" ] && [ "$ubuntuSubVersion" -ge "04" ]
-  then
+  if [ "$ubuntuMainVersion" -ge "14" ] && [ "$ubuntuSubVersion" -ge "04" ]; then
     LSMode="unlimited"
-  elif   [ "$ubuntuMainVersion" -ge "12" ] && [ "$ubuntuSubVersion" -ge "04" ]
-  then
+  elif   [ "$ubuntuMainVersion" -ge "12" ] && [ "$ubuntuSubVersion" -ge "04" ]; then
     LSMode="legacy"
-  elif [ "$kernelMainVersion" == "4" ]
-  then
+  elif [ "$kernelMainVersion" == "4" ]; then
     LSMode="unlimited"
-  elif [ "$kernelMainVersion" == "3" ]   && [ "$kernelSubVersion" -ge "18" ]
-  then
+  elif [ "$kernelMainVersion" == "3" ]   && [ "$kernelSubVersion" -ge "18" ]; then
     LSMode="legacy"
   else
     echo "ABORTING: Sorry, but your System is not capable of running layersnap."
@@ -457,29 +441,17 @@ set_mode() {
 
 # get human readable total size of directory
 size_of_dir() { # (pathname)
-  # get dirname
-  location=$(dirname $(realpath $1))
+  location=$(dirname $(realpath $1)) # get dirname
+  name=$(basename $(realpath $1)) # get basename
+  sizeCachePath="$location/.size_of_$name" # generate cache path out of dirname and basename
   
-  # get basename
-  name=$(basename $(realpath $1))
-  
-  # generate cache path out of dirname and basename
-  sizeCachePath="$location/.size_of_$name"
-  
-  # check if dir-size already been cached
-  if [ -e "$sizeCachePath" ]
-  then
-    # read size from cache
-    echo "$(cat "$sizeCachePath")"
+  # check if dir-size has already been cached
+  if [ -e "$sizeCachePath" ]; then
+    echo "$(cat "$sizeCachePath")" # read size from cache
   else
-    # calculate size
-    dirSize=$(du -sch $1 | head -n 1 | cut -d "	" -f1 )
-    
-    # write cache
-    echo "$dirSize" > $sizeCachePath
-    
-    # echo size
-    echo "$dirSize"
+    dirSize=$(du -sch $1 | head -n 1 | cut -d "	" -f1 ) # calculate size
+    echo "$dirSize" > $sizeCachePath # write cache
+    echo "$dirSize" # echo size
   fi 
 }
 
@@ -490,8 +462,7 @@ pluralize() { # (word, count)
 
 # compose status line of layer
 layer_status_line() { # (count, path)
-  if [ "$3" != "upper" ]
-  then
+  if [ "$3" != "upper" ]; then
     # lower layers
     LayerDate=$(date -d @$(basename $2 | cut -c 7-) "$DisplayDateFormat")
   else
@@ -504,74 +475,100 @@ layer_status_line() { # (count, path)
 
 # check if pool is mounted
 is_pool_mounted() {
-  echo 
-  if mount | grep $TargetPath > /dev/null
-  then
+  if mount | grep $TargetPath > /dev/null; then
     return 0 # true
-  else
+  fi
+
+  if [ -d "$Lower2Path" ] && ! mount | grep $Lower2Path > /dev/null; then
     return 1 # false
   fi
+  
+  return 1 # false
 }
 
 # set all the variables needed for working with a layer-pool
 set_pool_vars() {
-  # date in format suitable for use in pathname
   LayerName=$(date "$DateFormat")
-  
-  # path to upper dir
   UpperPath="$PoolPath/upper"
-  
-  # path to work dir
   WorkPath="$PoolPath/work"
+  NewLowerPath="$PoolPath/lower-$LayerName"
+
+  # set mode specific paths
+  if [ "$LSMode" == "unlimited" ]; then
   
-  # total lower-layer-count
-  LayerCount=$(find "$PoolPath" -name lower-* | wc -l)
-
-  if [ "$LSMode" == "unlimited" ]
-  then 
-    # whole path with date
-    LowerPath="$PoolPath/lower-$LayerName"
-
-    # ":"-seperated list of layer-paths
+    # ":"-seperated descending list of layer-paths
     LowerList=""
     for f in "$PoolPath/lower-"*
     do
       LowerList="$(realpath "$f"):$LowerList"
-    done
+    done  
+    # remove trailing colon
     LowerList=${LowerList::-1}
-  elif [ "$LSMode" == "legacy" ]
-  then
-    # whole path with date
-    LowerPath="$PoolPath/lower"
-
-    # marge path
-    MergePath="$PoolPath/merge"
-
-    # path to upper2 dir
+  elif [ "$LSMode" == "legacy" ]; then
+    # ":"-seperated ascending list of layer-paths
+    lowerList=""
+    for f in "$PoolPath/lower-"*
+    do
+      lowerList="$lowerList$(realpath "$f"):"
+    done
+    Lower1Path=$(echo "$lowerList" | cut -d ":" -f1)
+    Lower2Path=$(echo "$lowerList" | cut -d "/" -f2)
     Upper2Path="$PoolPath/upper2"
   fi
-
-  set_layers_available
+  
+  #
+  set_layer_count
 }
 
-# calculate number of still available layers
-set_layers_available() {
-  if [ "$LSMode" == "unlimited" ]
-  then
-    LayersAvailable="Unlimited"
-  elif [ "$LSMode" == "legacy" ]
-  then
-    if is_first_snapshot
-    then
-      LayersAvailable="2"
+set_layer_count() {
+  if [ "$LSMode" == "unlimited" ]; then 
+    # total lower-layer-count
+    LayerCount=$(find "$PoolPath" -name lower-* | wc -l)
+    LayerCount=$(expr "$LayerCount" + 1)
+  elif [ "$LSMode" == "legacy" ]; then
+    if [ -d "$Upper2Path" ]; then
+      LayerCount="3"
+    elif [ -d "$UpperPath" ]; then
+      LayerCount="2"
     else
-      if is_last_snapshot
-      then
-        LayersAvailable="1"
-      else
-        LayersAvailable="0"
-      fi
+      LayerCount="1"      
     fi
+  fi
+  
+  if [ "$LSMode" == "unlimited" ]; then
+    LayersAvailable="Unlimited"
+  elif [ "$LSMode" == "legacy" ]; then
+    LayersAvailable=$(expr 3 - "$LayerCount")
+  fi
+}
+
+# if pool-dir doesnt exist, you're doing the first snapshot 
+is_first_snapshot() {
+  # cache result, so it doesnt change while snapshot progresses
+  if [ -z $isFirstSnapshot ]; then # check if variable has string-length of zero
+    if [ ! -d "$PoolPath" ]; then
+      isFirstSnapshot=true
+    else
+      isFirstSnapshot=false
+    fi
+  fi
+
+  # decide via cache
+  if [ "$isFirstSnapshot" == "true" ]; then
+    return 0 # true
+  elif [ "$isFirstSnapshot" == "false" ]; then
+    return 1 # false
+  fi
+
+  echo ERRRORRRR
+}
+
+# is second and last legacy-mode snapshot; in unlimited mode, there ist never a last snapshot
+is_last_snapshot() {
+  if [ -d "$PoolPath" ]  && [ ! -d "$Upper2Path" ]; then
+    return 0 # true, last
+  else
+    return 1 # fasle, other
   fi
 }
 
@@ -580,8 +577,7 @@ set_destination_layer_path() {
   i=1
   for f in "$PoolPath/lower-"*
   do
-    if [ "$i" == "$destinationLayerID" ]
-    then
+    if [ "$i" == "$destinationLayerID" ]; then
       destinationLayerPath="$f"
       break
     fi
@@ -592,8 +588,7 @@ set_destination_layer_path() {
 # sets LowerList-variable 
 set_lower_list() { # (from-ID, to-ID)
   # check if params are set and are integers
-  if [[ "$1" =~ "^[0-9]+$" ]] && [[ "$1" =~ "^[0-9]+$" ]]
-  then
+  if [[ "$1" =~ "^[0-9]+$" ]] && [[ "$1" =~ "^[0-9]+$" ]]; then
     # if params are set, use them
     from="$1"
     to="$2"
@@ -613,8 +608,7 @@ set_lower_list() { # (from-ID, to-ID)
   for f in "$PoolPath/lower-"*
   do
     # check if layer is within selected range
-    if [ "$i" -ge "$from" ] && [ "$i" -le "$to" ]
-    then
+    if [ "$i" -ge "$from" ] && [ "$i" -le "$to" ]; then
       # add layers absolute path to the LowerList in the correct order for overlayfs-syntax
       LowerList="$(realpath "$f"):$LowerList"
     fi
@@ -629,7 +623,7 @@ set_lower_list() { # (from-ID, to-ID)
 # merges one directory into another, overwriting existing files 
 merge_layers_by_path() { # (fromLayerPath, destinationLayerPath)
   echo "merging $1 into $2"
-  rsync --remove-source-files "$1/"* "$2"
+  debug rsync --remove-source-files "$1/"* "$2"
   # find "$1/"* -type d -empty -delete
   
   # displays message if layer has not been emptied and deleted completely
@@ -671,13 +665,18 @@ parse_request() { # ($*)
   done
 
   # last param
-  if [ -n "$1" ]
-  then
+  if [ -n "$1" ]; then
     TargetPath=$(realpath $1)
     #TargetPath="$(pwd)/$1"
   else
     echo "ERROR: please provide a target-dir!"
   fi
+}
+
+# print 
+debug() {
+  echo $* # uncomment to enable debugging
+  $*
 }
 
 
