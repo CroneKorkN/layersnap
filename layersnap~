@@ -23,6 +23,7 @@
 # - $((2 ** 4))
 # - ubuntu 12.04 needs 'sudo apt-get install realpath'
 # - legacy-mode: check both mount-points seperately
+# - merging in legacy-mode
 
 
 ##############
@@ -48,6 +49,7 @@ ls_bootstrap() { # (request)
   # check if target exists
   if [ ! -d "$TargetPath" ]; then
     echo "ERROR: there is no directory $TargetPath"
+    exit 1
   fi
   
   # basic paths and vars
@@ -204,7 +206,6 @@ ls_snapshot_legacy() {
 
   # check 
   if is_first_snapshot; then
-    debug echo "first legacy snapshot"
     # create pool- and upper-dir
     mkdir -p "$PoolPath" "$UpperPath" 
 
@@ -214,7 +215,6 @@ ls_snapshot_legacy() {
     # recreate target-dir as mountpoint
     mkdir  "$TargetPath"
   else
-    debug echo "second legacy snapshot"
     # unmount target dir
     umount "$TargetPath"
 
@@ -287,58 +287,63 @@ ls_restore() {
   umount "$TargetPath"
   rmdir  "$TargetPath"
   
-  # UNLIMITED
+  # wich mode?
   if [ "$LSMode" == "unlimited" ]; then
-    # initialize iterator
-    i=1
-    
-    # iterate through lower-dirs
-    for f in "$PoolPath/lower-"*; do
-      if [ "$i" == 1 ]; then
-        # remember lowest layer
-        LowestPath="$f"
-      else
-        # merge upper layers into remembered lowest it
-        merge_layers_by_path "$f/" "$LowestPath"
-      fi
-      
-      # check if target-layer reached
-      if [ "$i" == "$destinationLayerID" ]; then
-        # stop merging
-        break
-      fi
-      
-      # increase iterator
-      i=$(expr $i + 1)
-    done
-    
-    # make merged dir the target dir
-    mv "$LowestPath" "$TargetPath"  
-  
-  # LEGACY 
+    ls_restore_unlimited 
   elif [ "$LSMode" == "legacy" ]; then
-    # umount lower2 if neccessary
-    if [ "$LayerCount" == "3" ]; then
-      umount "$Lower2Path"
-    fi
-    
-    # keep third layer changes?
-    if [ "$destinationLayerID" -ge "3" ]; then
-      merge_layers_by_path "$Upper2Path" "$Lower1Path"
-    fi
-    
-    # keep second layer changes?
-    if [ "$destinationLayerID" -ge "3" ]; then
-      merge_layers_by_path "$UpperPath" "$Lower1Path"
-    fi
-    
-    # keep base layer anyway
-    mv "$Lower1Path" "$TargetPath"
+    ls_restore_legacy
   fi
-  
 
   # remove leftovers
   rm -R "$PoolPath"
+}
+
+ls_restore_unlimited() {
+  # initialize iterator
+  i=1
+  
+  # iterate through lower-dirs
+  for f in "$PoolPath/lower-"*; do
+    if [ "$i" == 1 ]; then
+      # remember lowest layer
+      LowestPath="$f"
+    else
+      # merge upper layers into remembered lowest it
+      merge_layers_by_path "$f/" "$LowestPath"
+    fi
+    
+    # check if target-layer reached
+    if [ "$i" == "$destinationLayerID" ]; then
+      # stop merging
+      break
+    fi
+    
+    # increase iterator
+    i=$(expr $i + 1)
+  done
+  
+  # make merged dir the target dir
+  mv "$LowestPath" "$TargetPath"  
+}
+
+ls_restore_legacy() {
+  # umount lower2 if neccessary
+  if [ "$LayerCount" == "3" ]; then
+    umount "$Lower2Path"
+  fi
+  
+  # keep third layer changes?
+  if [ "$destinationLayerID" -ge "3" ]; then
+    merge_layers_by_path "$Upper2Path" "$Lower1Path"
+  fi
+  
+  # keep second layer changes?
+  if [ "$destinationLayerID" -ge "2" ]; then
+    merge_layers_by_path "$UpperPath" "$Lower1Path"
+  fi
+  
+  # keep base layer anyway
+  mv "$Lower1Path" "$TargetPath"
 }
 
 #
@@ -353,6 +358,21 @@ ls_merge() {
 
   # show status screen first
   ls_status
+  
+  # which mode?
+  if [ "$LSMode" == "unlimited" ]; then
+    ls_merge_unlimited
+  elif [ "$LSMode" == "legacy" ]; then
+    ls_merge_legacy
+  fi
+}
+
+ls_merge_legacy() {
+  echo "WARNING: merging in legacy-mode is not supported yet."
+  exit 1
+}
+
+ls_merge_unlimited() {
 
   # get user input, which layers to merge
   read -p "Merge layers starting from: " fromLayerID
@@ -391,7 +411,6 @@ ls_merge() {
   # feedback
   echo "done"
 }
-
 
 #############
 #############
@@ -513,10 +532,12 @@ set_pool_vars() {
   elif [ "$LSMode" == "legacy" ]; then
     # ":"-seperated ascending list of layer-paths
     lowerList=""
-    for f in "$PoolPath/lower-"*
-    do
-      lowerList="$lowerList$(realpath "$f"):"
-    done
+    if [ "$(ls -A "$PoolPath/lower-"*)" ]; then
+      for f in "$PoolPath/lower-"*
+      do
+        lowerList="$lowerList$(realpath "$f"):"
+      done
+    fi
     Lower1Path=$(echo "$lowerList" | cut -d ":" -f1)
     Lower2Path=$(echo "$lowerList" | cut -d ":" -f2)
     Upper2Path="$PoolPath/upper2"
@@ -629,11 +650,16 @@ set_lower_list() { # (from-ID, to-ID)
 # merges one directory into another, overwriting existing files 
 merge_layers_by_path() { # (fromLayerPath, destinationLayerPath)
   echo "merging $1 into $2"
-  debug rsync --remove-source-files "$1/"* "$2"
-  # find "$1/"* -type d -empty -delete
   
-  # displays message if layer has not been emptied and deleted completely
-  rmdir "$1"
+  # check empty
+  if [ "$(ls -A $1)" ]; then
+    debug rsync --remove-source-files "$1/"* "$2"  
+    
+    # displays message if layer has not been emptied and deleted completely
+    rmdir "$1"
+  else
+    rmdir $1
+  fi
 }
 
 # parse request params
@@ -680,7 +706,7 @@ parse_request() { # ($*)
 
 # print 
 debug() {
-  echo $* # uncomment to enable debugging
+  #echo $* # uncomment to enable debugging
   $*
 }
 
