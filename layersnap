@@ -44,8 +44,15 @@ ls_bootstrap() { # (request)
   
   # set mode depending on host-system
   set_mode
-
+  
+  # check if target exists
+  if [ ! -d "$TargetPath" ]; then
+    echo "ERROR: there is no directory $TargetPath"
+    exit 1
+  fi
+  
   # basic paths and vars
+  TargetPath="$(realpath "$TargetPath")" # remove unnecessary ".."
   TargetName="$(basename $TargetPath)"
   PoolPath="$(dirname $TargetPath)/.layersnap/$TargetName"
   DateFormat="+%s"
@@ -666,8 +673,7 @@ parse_request() { # ($*)
 
   # last param
   if [ -n "$1" ]; then
-    TargetPath=$(realpath $1)
-    #TargetPath="$(pwd)/$1"
+    TargetPath="$(pwd)/$1"
   else
     echo "ERROR: please provide a target-dir!"
   fi
